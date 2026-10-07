@@ -4,9 +4,13 @@ Navigációs app közösségi jelzésekkel. Androidon és gépen is fut (PWA: te
 
 ## Mit tud
 
-- **Térkép + keresés** (OpenStreetMap, Nominatim), automatikus világos/sötét térkép napszak szerint
-- **Útvonaltervezés** több alternatívával (OSRM). A jelzések **beleszámítanak**: ha dugó, baleset vagy lezárás van az egyik úton, a másikat ajánlja előre („+12 perc a jelzések miatt”)
-- **Navigáció** magyar hangos utasításokkal, újratervezéssel, ha letérsz, ébren tartott kijelzővel
+- **Vektoros térkép** (MapLibre + OpenFreeMap, kulcs nélkül), navigáció közben **menetirányba forgó, döntött 3D nézet**; éjjel magától sötét. Ha a térképszerver nem elérhető, OpenStreetMap tartalékra vált, és kiírja a hibát
+- **Keresés** (Nominatim), **mentett helyek** (Otthon, Munka, Suli) és legutóbbiak gyorsgombként
+- **Útvonaltervezés** több alternatívával (OSRM), **megállókkal**. A jelzések **beleszámítanak**: ha dugó, baleset vagy lezárás van az egyik úton, a másikat ajánlja előre, és az útvonal **forgalom szerint színezve** látszik
+- **Indulás most / Később / Érkezés ekkorra**: megmondja, mikor indulj
+- **Legolcsóbb benzinkút az útvonal mentén**, egy gombbal megállónak veszi
+- **Navigáció** magyar hangos utasításokkal, **sávjelzéssel**, „utána” kanyarral, újratervezéssel, ébren tartott kijelzővel
+- **Parkoló a célnál**: a cél előtt felajánlja a közeli parkolókat; **érkezés megosztása** üzenetben
 - **Jelzések** (Waze-szerűen): rendőr, traffipax (mobil/fix/szakasz/piros lámpás), baleset, dugó, útlezárás/útépítés, veszély (kátyú, tárgy, álló jármű, állat, jég, köd, víz, hó), szabad parkoló
   - mindegyik típusnak saját élettartama van (dugó 30 perc, kátyú 7 nap…)
   - **„Még ott van?”** kérdés, miután elhaladtál mellette → megerősítés meghosszabbítja, 2 nemleges szavazattal több → eltűnik
@@ -16,7 +20,7 @@ Navigációs app közösségi jelzésekkel. Androidon és gépen is fut (PWA: te
 - **Benzinkutak árakkal**: bárki beírhatja a 95/100/dízel/LPG árat, a legolcsóbb 95-ös zölddel látszik
 - **Parkolók** (fizetős/ingyenes, férőhely, parkolóház)
 - **Szimuláció**: gépen GPS nélkül végig tudod „vezetni” az útvonalat, kipróbálni a figyelmeztetéseket
-- Hosszú nyomás / jobb klikk a térképen: „Navigálj ide” vagy „Jelzés ide”
+- Hosszú nyomás / jobb klikk a térképen: „Navigálj ide”, „Megálló ide” vagy „Jelzés ide”
 
 ## Letöltés
 
@@ -96,6 +100,5 @@ A jobb felső sarokban „● Közösségi mód” jelenik meg. Az anon kulcs ny
 
 - Az OSRM, Nominatim és Overpass ingyenes **nyilvános demószerverek** — tesztre és pár felhasználóra jók, de ha sokan használják, saját szerver (vagy fizetős szolgáltatás) kell. A `config.js`-ben átírhatók.
 - Élő forgalmi adat (mint a Google-nél) nincs: a forgalmat a felhasználók jelzései adják — ezért fontos, hogy minél többen használják.
-- A térkép északra néz (nem forog a menetiránnyal); a nyíl mutatja az irányt.
 - Háttérben (lezárt képernyővel) nem kap GPS-t — vezetés közben maradjon elöl az app (az androidos app ilyenkor nem engedi elaludni a kijelzőt).
 - Asztali gépen általában nincs GPS: ott a térkép a géped hozzávetőleges helyére áll, az indulási pontot kereséssel / jobb klikkel adhatod meg.

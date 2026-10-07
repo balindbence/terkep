@@ -1,9 +1,9 @@
 // Úthírnök service worker: app-héj offline, térképcsempék gyorsítótárban
-const VER = "uthirnok-v1";
+const VER = "uthirnok-v2";
 const SHELL = ["./", "index.html", "style.css", "config.js", "manifest.webmanifest",
-  "js/version.js", "js/geo.js", "js/store.js", "js/reports.js", "js/routing.js", "js/pois.js", "js/app.js",
+  "js/version.js", "js/geo.js", "js/store.js", "js/reports.js", "js/routing.js", "js/pois.js", "js/mapview.js", "js/app.js",
   "icons/icon-192.png", "icons/icon-512.png",
-  "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css", "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"];
+  "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css", "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"];
 const TILES = "uthirnok-tiles";
 const MAX_TILES = 3000;
 
@@ -21,7 +21,7 @@ self.addEventListener("fetch", e => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET") return;
   // térképcsempék: gyorsítótár először (offline is látszik, amit már láttál)
-  if (url.hostname.endsWith("basemaps.cartocdn.com")) {
+  if (url.hostname === "tiles.openfreemap.org" || url.hostname === "tile.openstreetmap.org") {
     e.respondWith(caches.open(TILES).then(async c => {
       const hit = await c.match(e.request);
       if (hit) return hit;

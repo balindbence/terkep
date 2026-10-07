@@ -7,6 +7,9 @@ window.UTHIRNOK_CONFIG = {
   SUPABASE_URL: "",        // pl. "https://abcdxyz.supabase.co"
   SUPABASE_ANON_KEY: "",   // Project Settings → API → anon public key
 
+  // Térkép (vektoros, ingyenes, kulcs nélkül). Ha nem érhető el, az app OSM raszter térképre vált.
+  MAP_STYLE_URL: "https://tiles.openfreemap.org/styles/liberty",
+
   // Ingyenes nyilvános szolgáltatások (később cserélhetők sajátra)
   OSRM_URL: "https://router.project-osrm.org",
   NOMINATIM_URL: "https://nominatim.openstreetmap.org",

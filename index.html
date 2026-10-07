@@ -5,84 +5,101 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
   <title>Úthírnök</title>
   <meta name="description" content="Navigáció közösségi jelzésekkel: rendőr, traffipax, baleset, dugó, veszély, benzinárak, parkolás.">
-  <meta name="theme-color" content="#0f1724">
+  <meta name="theme-color" content="#eef1f4">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div id="map"></div>
 
-  <!-- Felső sáv: keresés -->
+  <!-- térkép-hiba -->
+  <div id="mapError" class="glass hidden">
+    <b>Nem töltődik be a térkép</b>
+    <span id="mapErrorText">Nincs internet, vagy a térképszerver nem elérhető.</span>
+    <button class="btn small" id="mapRetry">Újra</button>
+  </div>
+
+  <!-- ===== Böngészés: kereső + gyorsgombok ===== -->
   <header id="topbar">
-    <div class="search">
-      <span class="search-ico">⌕</span>
+    <div class="search glass">
+      <svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
       <input id="q" type="search" placeholder="Hová mész?" autocomplete="off" enterkeyhint="search">
-      <button id="btnSettings" class="icon-btn" title="Beállítások">⚙</button>
+      <button id="btnSettings" class="icon-btn" title="Beállítások" aria-label="Beállítások">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>
+      </button>
     </div>
-    <ul id="results" class="hidden"></ul>
+    <div id="chips" class="chips"></div>
+    <ul id="results" class="glass hidden"></ul>
   </header>
 
-  <!-- Navigációs manőver-sáv -->
+  <!-- ===== Navigáció ===== -->
   <section id="maneuver" class="hidden">
-    <div class="mv-arrow" id="mvArrow">↑</div>
+    <div class="mv-arrow" id="mvArrow"></div>
     <div class="mv-text">
       <div class="mv-dist" id="mvDist">–</div>
       <div class="mv-instr" id="mvInstr">–</div>
     </div>
+    <div class="mv-then hidden" id="mvThen"><small>utána</small><span id="mvThenArrow"></span></div>
   </section>
+  <div id="lanes" class="hidden"></div>
 
-  <!-- Figyelmeztetés (jelzés előttünk) -->
-  <section id="alert" class="hidden">
+  <div id="alert" class="glass hidden">
     <div class="al-ico" id="alIco">⚠</div>
     <div class="al-text">
-      <div class="al-title" id="alTitle">–</div>
-      <div class="al-sub" id="alSub">–</div>
+      <div><b id="alTitle">–</b> <small id="alSub">–</small></div>
+      <div class="al-bar hidden" id="alBar"><i id="alBarFill"></i></div>
     </div>
     <div class="al-actions hidden" id="alActions">
-      <button class="pill ok" id="alYes">Még ott van</button>
-      <button class="pill no" id="alNo">Már nincs</button>
+      <button class="vote yes" id="alYes" aria-label="Még ott van">👍</button>
+      <button class="vote no" id="alNo" aria-label="Már nincs ott">👎</button>
     </div>
-  </section>
+  </div>
 
-  <!-- Sebesség + korlát -->
-  <div id="speedo">
-    <div class="spd" id="spd"><b id="spdVal">0</b><small>km/h</small></div>
+  <div id="speedo" class="glass">
+    <div class="spd"><b id="spdVal">0</b><small>km/h</small></div>
     <div class="limit hidden" id="limit"><span id="limitVal">50</span></div>
   </div>
 
-  <!-- Jobb oldali gombok -->
-  <div id="fabs">
-    <button class="fab" id="btnLayers" title="Rétegek">◫</button>
-    <button class="fab" id="btnLocate" title="Saját hely">◎</button>
+  <div id="side">
+    <button class="glass sbtn" id="btnLayers" title="Rétegek" aria-label="Rétegek">
+      <svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg>
+    </button>
+    <button class="glass sbtn hidden" id="btnVoice" title="Hang" aria-label="Hang">
+      <svg viewBox="0 0 24 24" id="voiceIco"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 9a4 4 0 010 6M18.5 6.5a8 8 0 010 11"/></svg>
+    </button>
+    <button class="glass sbtn" id="btnLocate" title="Saját hely" aria-label="Saját hely">
+      <svg viewBox="0 0 24 24"><path d="M12 2l7 19-7-4-7 4z"/></svg>
+    </button>
+    <button class="sbtn rep" id="btnReport" title="Jelzés" aria-label="Jelzés">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
   </div>
-  <button id="btnReport" title="Jelzés">
-    <span>＋</span><small>Jelzés</small>
-  </button>
 
-  <!-- Alsó lap (útvonalak, hely, navigáció) -->
+  <!-- alsó lap: hely, útvonalak, navigáció -->
   <section id="sheet" class="hidden">
     <div class="grab"></div>
     <div id="sheetBody"></div>
   </section>
 
-  <!-- Jelzés-választó -->
+  <!-- felugró kártya (jelzés, beállítások, rétegek) -->
   <div id="modal" class="hidden">
     <div class="modal-card">
       <div class="modal-head">
-        <h2 id="modalTitle">Mit jelzel?</h2>
-        <button class="icon-btn" id="modalClose">✕</button>
+        <h2 id="modalTitle">Jelzés</h2>
+        <button class="icon-btn" id="modalClose" aria-label="Bezár">
+          <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
       </div>
       <div id="modalBody"></div>
     </div>
   </div>
 
   <div id="toast" class="hidden"></div>
-  <div id="mode-badge"></div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script src="config.js"></script>
   <script src="js/version.js"></script>
   <script src="js/geo.js"></script>
@@ -90,6 +107,7 @@
   <script src="js/reports.js"></script>
   <script src="js/routing.js"></script>
   <script src="js/pois.js"></script>
+  <script src="js/mapview.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

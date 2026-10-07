@@ -31,7 +31,19 @@ function createWindow() {
   win.loadFile(path.join(__dirname, "..", "www", "index.html"));
 }
 
+// A térkép- és útvonalszerverek (OpenStreetMap, OpenFreeMap, OSRM, Nominatim) szabályai szerint
+// a kérésnek be kell mutatkoznia. Helyi fájlból (file://) indítva a böngésző ezt nem teszi meg,
+// ezért itt adjuk hozzá: e nélkül egyes szerverek letiltják a kérést, és üres marad a térkép.
+const PAGE_URL = "https://balindbence.github.io/uthirnok/";
+const USER_AGENT = `Uthirnok/${app.getVersion()} (Windows; +https://github.com/balindbence/uthirnok)`;
+
 app.whenReady().then(() => {
+  session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ["https://*/*"] }, (details, cb) => {
+    const h = details.requestHeaders;
+    if (!h.Referer && !h.referer) h.Referer = PAGE_URL;
+    h["User-Agent"] = `${h["User-Agent"] || ""} ${USER_AGENT}`.trim();
+    cb({ requestHeaders: h });
+  });
   // hely és képernyő ébren tartás engedélyezése
   session.defaultSession.setPermissionRequestHandler((wc, perm, cb) => cb(["geolocation", "wake-lock", "notifications"].includes(perm)));
   session.defaultSession.setPermissionCheckHandler((wc, perm) => ["geolocation", "wake-lock", "notifications"].includes(perm));
