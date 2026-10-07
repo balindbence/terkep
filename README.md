@@ -42,7 +42,17 @@ Ha új verzió jön ki, az app magától szól („Új verzió: v1.0.3 · Letöl
 
 > A frissítés-jelzéshez és ahhoz, hogy bárki letölthesse, a repó legyen **Public**.
 
-**Böngészőből is megy** (pl. GitHub Pages-ről), ott PWA-ként a kezdőképernyőre tehető.
+### iPhone / iPad
+
+iPhone-ra webappként kerül fel (App Store nélkül):
+
+1. Safariban nyisd meg: **https://balindbence.github.io/uthirnok/**
+2. **Megosztás** gomb → **Főképernyőhöz adás** → **Hozzáadás**
+3. A kezdőképernyőről indítsd; teljes képernyős appként fut, és új kiadásnál magától frissül.
+
+Egyszeri beállítás ehhez: GitHubon a repó **Settings → Pages → Source: GitHub Actions**. Utána minden `Frissites-feltoltese.bat` futtatáskor a webapp is frissül.
+
+Korlátok iPhone-on: csak úgy navigál, ha az app elöl van és a képernyő be van kapcsolva (az iOS a háttérben nem ad helyet a webappoknak). Igazi App Store-os iOS apphoz Apple fejlesztői fiók kell (évi 99 dollár) és Mac (vagy GitHub Actions macOS gép).
 
 ---
 

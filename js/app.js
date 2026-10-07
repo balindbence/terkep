@@ -57,6 +57,9 @@
   const synth = window.speechSynthesis;
   function pickVoice() { try { huVoice = synth.getVoices().find(v => v.lang?.toLowerCase().startsWith("hu")) || null; } catch {} }
   if (synth) { pickVoice(); try { synth.onvoiceschanged = pickVoice; } catch {} }
+  // iPhone: a gépi hang csak akkor szól később, ha az első koppintáskor egyszer "elindítjuk"
+  const ttsUnlock = () => { try { const u = new SpeechSynthesisUtterance(" "); u.volume = 0; synth?.speak(u); } catch {} document.removeEventListener("touchend", ttsUnlock); };
+  document.addEventListener("touchend", ttsUnlock, { passive: true });
   function speak(text) {
     if (!S.settings.voice || !synth) return;
     try {
@@ -564,6 +567,10 @@
     say(["start"], `Indulás. ${Geo.fmtDur(rt.score)} az út.`);
     if (S.me) { MapView.follow(S.me, S.heading, true, S.speed); navTick(); } else renderNavSheet(rt.distance);
   }
+
+  document.addEventListener("visibilitychange", async () => {
+    if (document.visibilityState === "visible" && S.nav) { try { wakeLock = await navigator.wakeLock?.request("screen"); } catch {} }
+  });
 
   function stopNav(cleanup = true) {
     if (!S.nav) return;
@@ -1178,6 +1185,24 @@
     } catch {}
   }
   setTimeout(checkUpdate, 4000);
+
+  // ================= iPhone: telepítési tipp Safariban =================
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const standalone = window.navigator.standalone || matchMedia("(display-mode: standalone)").matches;
+  if (isIOS && !standalone && platform === "web" && !ls.get("uthirnok.iosHint", false)) {
+    setTimeout(() => {
+      openModal("Tedd ki a kezdőképernyőre", `
+        <p class="m-sub">Így teljes képernyős appként fut, mint egy letöltött alkalmazás.</p>
+        <ol class="ios-steps">
+          <li>Koppints lent a <b>Megosztás</b> gombra <span class="ios-ico">⬆︎</span></li>
+          <li>Görgess le, és válaszd: <b>Főképernyőhöz adás</b></li>
+          <li>Nyomd meg a <b>Hozzáadás</b> gombot</li>
+        </ol>
+        <p class="hint">Utána a kezdőképernyőről indítsd. Az első indításkor engedélyezd a helyzeted használatát.</p>
+        <div class="row"><button class="btn primary" id="iosOk">Rendben</button></div>`);
+      $("#iosOk").onclick = () => { ls.set("uthirnok.iosHint", true); closeModal(); };
+    }, 2500);
+  }
 
   // tesztekhez / konzolhoz
   window.Uthirnok = { S, MapView, onPosition, showPlace, choosePlace, planRoute, startSim, stopNav, refreshReports };

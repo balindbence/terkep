@@ -284,3 +284,6 @@ body.dark .warn-row span, body.dark .warn-row b { color: #fbbf24; }
 .county-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; font-size: 13.5px; max-height: 34vh; overflow: auto; }
 .county-grid label { display: flex; gap: 6px; align-items: center; }
 .field select { background: var(--soft); border: 0; border-radius: 12px; padding: 12px; }
+
+.ios-steps { margin: 4px 0 12px; padding-left: 20px; line-height: 1.9; font-size: 15px; }
+.ios-ico { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; background: var(--soft); color: var(--acc); font-size: 13px; }

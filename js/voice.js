@@ -59,9 +59,33 @@ const Voice = (() => {
   const count = () => PHRASES.filter(p => cache.has(p.id)).length;
 
   // ---------- lejátszás ----------
+  // WebAudio-val játsszuk le: iPhone-on ez megbízható, ha az első koppintáskor "feloldjuk".
+  let actx = null;
+  const decoded = new Map();   // Blob -> AudioBuffer
+  function audioCtx() {
+    if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch { actx = null; } }
+    return actx;
+  }
+  function unlock() {
+    const c = audioCtx(); if (!c) return;
+    if (c.state === "suspended") c.resume().catch(() => {});
+    try { const b = c.createBuffer(1, 1, 22050), src = c.createBufferSource(); src.buffer = b; src.connect(c.destination); src.start(0); } catch {}
+  }
+  ["touchend", "click", "keydown"].forEach(ev => document.addEventListener(ev, unlock, { passive: true }));
+
   let queue = [], playing = false, current = null;
-  function playBlob(blob) {
-    return new Promise(res => {
+  async function playBlob(blob) {
+    const c = audioCtx();
+    if (c) {
+      try {
+        if (c.state === "suspended") await c.resume();
+        let buf = decoded.get(blob);
+        if (!buf) { buf = await c.decodeAudioData(await blob.arrayBuffer()); decoded.set(blob, buf); }
+        await new Promise(res => { const src = c.createBufferSource(); src.buffer = buf; src.connect(c.destination); src.onended = res; current = src; src.start(0); });
+        return;
+      } catch (e) { console.warn("WebAudio lejátszás hiba, <audio> tartalék:", e); }
+    }
+    await new Promise(res => {
       const url = URL.createObjectURL(blob);
       const a = new Audio(url); current = a;
       const done = () => { URL.revokeObjectURL(url); res(); };
@@ -87,7 +111,7 @@ const Voice = (() => {
     queue.push(ids); pump();
     return true;
   }
-  function stop() { queue = []; try { current?.pause(); } catch {} }
+  function stop() { queue = []; try { current?.stop ? current.stop() : current?.pause(); } catch {} }
 
   // távolság → legközelebbi felvett távolság-mondat
   function distClip(m) {
@@ -98,10 +122,9 @@ const Voice = (() => {
   }
 
   // ---------- sípolás (ha nincs se felvett hang, se gépi hang) ----------
-  let actx;
   function beep(n = 2) {
     try {
-      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      const actx = audioCtx(); if (!actx) return;
       for (let i = 0; i < n; i++) {
         const o = actx.createOscillator(), g = actx.createGain();
         o.frequency.value = 880; o.connect(g); g.connect(actx.destination);
@@ -177,5 +200,5 @@ const Voice = (() => {
     return { n, name: j.name };
   }
 
-  return { GROUPS, PHRASES, TEXT, load, put, del, clear, has, count, play, stop, distClip, beep, startRecording, stopRecording, isRecording, playBlob, exportPack, importPack };
+  return { unlock, GROUPS, PHRASES, TEXT, load, put, del, clear, has, count, play, stop, distClip, beep, startRecording, stopRecording, isRecording, playBlob, exportPack, importPack };
 })();

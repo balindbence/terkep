@@ -21,6 +21,13 @@ if not exist ".git" (
   exit /b 1
 )
 
+rem A GitHub build-recept frissitese, ha jott uj
+if exist "github-workflow-build.yml" (
+  if not exist ".github\workflows" mkdir ".github\workflows"
+  move /y "github-workflow-build.yml" ".github\workflows\build.yml" >nul
+  echo Build-recept frissitve.
+)
+
 echo Verziószam emelese...
 call npm version patch --no-git-tag-version >nul
 if errorlevel 1 (

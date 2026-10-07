@@ -9,6 +9,8 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
   windows:
@@ -85,6 +87,35 @@ jobs:
           name: uthirnok-android
           path: out/*.apk
           if-no-files-found: error
+
+  # iPhone (es barki bongeszobol): a webapp kikerul a GitHub Pages-re
+  # -> https://balindbence.github.io/uthirnok/  (Safari: Megosztas -> Fokepernyohoz adas)
+  # Egyszer be kell kapcsolni: repo Settings -> Pages -> Source: GitHub Actions
+  pages:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Webapp osszerakasa
+        run: |
+          npm install --no-audit --no-fund --ignore-scripts
+          npm run www
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: www
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
 
   # Cimkes inditasnal: mindket fajl felkerul a Releases oldalra
   release:
