@@ -3,14 +3,14 @@ const Reports = (() => {
   const TYPES = {
     police:  { label: "Rendőr", ico: "👮", color: "#2f6fed", ttl: 60, penalty: 0, warn: 800,
       subs: [["visible", "Látható ellenőrzés"], ["hidden", "Rejtett"], ["other_side", "Másik oldalon"]] },
-    camera:  { label: "Traffipax", ico: "📸", color: "#7c3aed", ttl: 120, penalty: 0, warn: 900,
+    camera:  { label: "Traffi", ico: "📸", color: "#7c3aed", ttl: 120, penalty: 0, warn: 900,
       subs: [["mobile", "Mobil traffipax"], ["fixed", "Fix traffipax"], ["section", "Szakaszmérés"], ["redlight", "Piros lámpás kamera"]] },
     accident:{ label: "Baleset", ico: "💥", color: "#e11d48", ttl: 90, penalty: 600, warn: 1200,
       subs: [["minor", "Kisebb"], ["major", "Súlyos"], ["other_side", "Másik oldalon"]] },
     jam:     { label: "Dugó", ico: "🚗", color: "#ea580c", ttl: 30, penalty: 420, warn: 1500,
       subs: [["moderate", "Lassú forgalom"], ["heavy", "Erős dugó"], ["standstill", "Áll a sor"]] },
-    closure: { label: "Útlezárás", ico: "⛔", color: "#b91c1c", ttl: 24 * 60, penalty: 7200, warn: 2000,
-      subs: [["full", "Teljes lezárás"], ["lane", "Sávlezárás"], ["roadwork", "Útépítés"]] },
+    closure: { label: "Útépítés, lezárás", ico: "🚧", color: "#b91c1c", ttl: 24 * 60, penalty: 7200, warn: 2000,
+      subs: [["roadwork", "Útépítés"], ["lane", "Sávlezárás"], ["full", "Teljes lezárás"]] },
     hazard:  { label: "Veszély", ico: "⚠️", color: "#d97706", ttl: 120, penalty: 60, warn: 700,
       subs: [["pothole", "Kátyú"], ["object", "Tárgy az úton"], ["stopped", "Álló jármű"], ["animal", "Állat az úton"],
              ["ice", "Jeges út"], ["fog", "Köd"], ["flood", "Víz az úton"], ["snow", "Hó"]] },
@@ -56,7 +56,8 @@ const Reports = (() => {
       const n = Geo.nearestOnLine([r.lat, r.lng], rt.line);
       if (n.d < 60) hits.push({ ...r, along: rt.cum[n.i] + ((rt.cum[n.i + 1] ?? rt.cum[n.i]) - rt.cum[n.i]) * n.t });
     }
-    const penalty = hits.reduce((s, r) => s + (TYPES[r.type]?.penalty || 0) * (r.sub === "lane" ? 0.15 : r.sub === "other_side" ? 0 : 1), 0);
+    const mult = r => r.sub === "other_side" ? 0 : r.sub === "lane" ? 0.15 : r.sub === "roadwork" ? 0.08 : 1;
+    const penalty = hits.reduce((s, r) => s + (TYPES[r.type]?.penalty || 0) * mult(r), 0);
     return { hits, penalty };
   }
 

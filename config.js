@@ -11,7 +11,8 @@ window.UTHIRNOK_CONFIG = {
   MAP_STYLE_URL: "https://tiles.openfreemap.org/styles/liberty",
 
   // Ingyenes nyilvános szolgáltatások (később cserélhetők sajátra)
-  OSRM_URL: "https://router.project-osrm.org",
+  VALHALLA_URL: "https://valhalla1.openstreetmap.de",   // elsődleges útvonaltervező (földutak kizárása, sok megálló)
+  OSRM_URL: "https://router.project-osrm.org",           // tartalék
   NOMINATIM_URL: "https://nominatim.openstreetmap.org",
   OVERPASS_URL: "https://overpass-api.de/api/interpreter",
 

@@ -45,8 +45,8 @@ app.whenReady().then(() => {
     cb({ requestHeaders: h });
   });
   // hely és képernyő ébren tartás engedélyezése
-  session.defaultSession.setPermissionRequestHandler((wc, perm, cb) => cb(["geolocation", "wake-lock", "notifications"].includes(perm)));
-  session.defaultSession.setPermissionCheckHandler((wc, perm) => ["geolocation", "wake-lock", "notifications"].includes(perm));
+  session.defaultSession.setPermissionRequestHandler((wc, perm, cb) => cb(["geolocation", "wake-lock", "notifications", "media"].includes(perm)));
+  session.defaultSession.setPermissionCheckHandler((wc, perm) => ["geolocation", "wake-lock", "notifications", "media"].includes(perm));
   createWindow();
 });
 app.on("second-instance", () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });

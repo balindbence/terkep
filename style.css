@@ -254,3 +254,20 @@ body.dark .dest-pin { border-color: #fff; background: #11151c; }
   #modal { align-items: center; }
   #maneuver { max-width: 410px; }
 }
+
+.opts-row { flex-wrap: wrap; }
+.opts-row > * { flex: 1 1 30%; }
+.subs.big { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.subs.big button { padding: 16px 10px; border-radius: 16px; font-size: 15px; }
+
+/* hangfelvevő */
+.rec-list { max-height: 46vh; overflow: auto; margin-top: 8px; }
+.rec-g { margin: 12px 0 4px; font-size: 12px; font-weight: 700; color: var(--mut); text-transform: uppercase; letter-spacing: .4px; }
+.rec-row { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+.rec-ok { width: 18px; color: var(--ok); font-weight: 800; }
+.rec-t { flex: 1; font-size: 14.5px; }
+.rec-b { width: 38px; height: 38px; border-radius: 50%; background: var(--soft); font-size: 15px; flex: none; }
+.rec-b:disabled { opacity: .35; }
+.rec-b.rec { color: var(--bad); font-size: 18px; }
+.rec-b.rec.on { background: var(--bad); color: #fff; animation: pulse 1s infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, .2); } }

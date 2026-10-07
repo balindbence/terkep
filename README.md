@@ -6,12 +6,13 @@ Navigációs app közösségi jelzésekkel. Androidon és gépen is fut (PWA: te
 
 - **Vektoros térkép** (MapLibre + OpenFreeMap, kulcs nélkül), navigáció közben **menetirányba forgó, döntött 3D nézet**; éjjel magától sötét. Ha a térképszerver nem elérhető, OpenStreetMap tartalékra vált, és kiírja a hibát
 - **Keresés** (Nominatim), **mentett helyek** (Otthon, Munka, Suli) és legutóbbiak gyorsgombként
-- **Útvonaltervezés** több alternatívával (OSRM), **megállókkal**. A jelzések **beleszámítanak**: ha dugó, baleset vagy lezárás van az egyik úton, a másikat ajánlja előre, és az útvonal **forgalom szerint színezve** látszik
+- **Útvonaltervezés** (Valhalla, tartaléknak OSRM) **bármennyi megállóval** (20 fölött szakaszokra bontva), megállók átrendezése és **„Legjobb sorrend”** optimalizálás, **földutak (burkolatlan utak) kizárása**, fizetős utak / autópálya kerülése. A jelzések **beleszámítanak**: ha dugó, baleset vagy lezárás van az egyik úton, a másikat ajánlja előre, és az útvonal **forgalom szerint színezve** látszik
 - **Indulás most / Később / Érkezés ekkorra**: megmondja, mikor indulj
 - **Legolcsóbb benzinkút az útvonal mentén**, egy gombbal megállónak veszi
-- **Navigáció** magyar hangos utasításokkal, **sávjelzéssel**, „utána” kanyarral, újratervezéssel, ébren tartott kijelzővel
+- **Saját, emberi hangon felvett magyar navigációs hang** (mint a Waze-ben): Beállítások → Hang felvétele. 44 rövid mondat („300 méter múlva”, „fordulj jobbra”, „Figyelem, rendőr előtted!”…), az app levágja a csendet és összefűzve mondja. A csomag elmenthető és átküldhető (📤 / 📥). Ha egy mondat hiányzik: sípol (vagy kérésre gépi hang).
+- **Navigáció** hangos utasításokkal, **sávjelzéssel**, „utána” kanyarral, újratervezéssel, ébren tartott kijelzővel
 - **Parkoló a célnál**: a cél előtt felajánlja a közeli parkolókat; **érkezés megosztása** üzenetben
-- **Jelzések** (Waze-szerűen): rendőr, traffipax (mobil/fix/szakasz/piros lámpás), baleset, dugó, útlezárás/útépítés, veszély (kátyú, tárgy, álló jármű, állat, jég, köd, víz, hó), szabad parkoló
+- **Jelzések** (Waze-szerűen, **két koppintással**): rendőr, traffipax (mobil/fix/szakasz/piros lámpás), baleset, dugó, útlezárás/útépítés, veszély (kátyú, tárgy, álló jármű, állat, jég, köd, víz, hó), szabad parkoló
   - mindegyik típusnak saját élettartama van (dugó 30 perc, kátyú 7 nap…)
   - **„Még ott van?”** kérdés, miután elhaladtál mellette → megerősítés meghosszabbítja, 2 nemleges szavazattal több → eltűnik
   - **hangos figyelmeztetés** előre („Figyelem! 500 méter múlva rendőr”)
@@ -98,7 +99,8 @@ A jobb felső sarokban „● Közösségi mód” jelenik meg. Az anon kulcs ny
 
 ## Korlátok, amikről tudni kell
 
-- Az OSRM, Nominatim és Overpass ingyenes **nyilvános demószerverek** — tesztre és pár felhasználóra jók, de ha sokan használják, saját szerver (vagy fizetős szolgáltatás) kell. A `config.js`-ben átírhatók.
+- A sávjelzés csak az OSRM tartalék útvonaltervezővel működik (a Valhalla nem ad sávadatot).
+- A Valhalla, OSRM, Nominatim és Overpass ingyenes **nyilvános demószerverek** — tesztre és pár felhasználóra jók, de ha sokan használják, saját szerver (vagy fizetős szolgáltatás) kell. A `config.js`-ben átírhatók.
 - Élő forgalmi adat (mint a Google-nél) nincs: a forgalmat a felhasználók jelzései adják — ezért fontos, hogy minél többen használják.
 - Háttérben (lezárt képernyővel) nem kap GPS-t — vezetés közben maradjon elöl az app (az androidos app ilyenkor nem engedi elaludni a kijelzőt).
 - Asztali gépen általában nincs GPS: ott a térkép a géped hozzávetőleges helyére áll, az indulási pontot kereséssel / jobb klikkel adhatod meg.

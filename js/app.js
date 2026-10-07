@@ -9,7 +9,7 @@
   // ================= állapot =================
   const S = {
     me: null, heading: null, speed: 0, follow: true,
-    settings: Object.assign({ voice: true, nick: "", avoidTolls: false, avoidMotorways: false, theme: "auto",
+    settings: Object.assign({ voice: true, voiceMode: "recorded", voiceFallback: "beep", nick: "", avoidTolls: false, avoidMotorways: false, avoidUnpaved: true, theme: "auto",
       layers: { reports: true, camera: true, fuel: true, parking: false } }, ls.get("uthirnok.settings", {})),
     places: ls.get("uthirnok.places", {}),          // {home:{name,pos}, work:…, school:…}
     recent: ls.get("uthirnok.recent", []),          // [{name, sub, pos}]
@@ -43,6 +43,7 @@
   document.body.classList.toggle("dark", isDark());
 
   // ================= térkép =================
+  Voice.load();
   await MapView.init("map", { center: C.DEFAULT_CENTER, zoom: C.DEFAULT_ZOOM, dark: isDark() });
   setInterval(applyTheme, 5 * 60000);
 
@@ -64,6 +65,14 @@
       synth.speak(u);
     } catch {}
   }
+  // hang: elsősorban a felvett emberi hang; ha egy mondat hiányzik → sípolás vagy gépi hang (beállítás szerint)
+  function say(ids, text) {
+    if (!S.settings.voice) return;
+    const mode = S.settings.voiceMode;
+    if (mode === "recorded" && Voice.play(ids)) return;
+    if (mode === "tts" || (mode === "recorded" && S.settings.voiceFallback === "tts")) return speak(text);
+    if (mode !== "off") Voice.beep(ids.includes("speeding") || ids.some(i => i?.startsWith("al_")) ? 3 : 2);
+  }
   const spokenDist = m => m >= 1000 ? `${(m / 1000).toFixed(1).replace(".0", "").replace(".", ",")} kilométer` : `${Math.max(50, Math.round(m / 50) * 50)} méter`;
   const myPos = () => S.me || MapView.center();
 
@@ -81,7 +90,7 @@
 
   function openModal(title, html) { $("#modalTitle").textContent = title; $("#modalBody").innerHTML = html; $("#modal").classList.remove("hidden"); }
   function closeModal() { $("#modal").classList.add("hidden"); }
-  $("#modalClose").onclick = closeModal;
+  $("#modalClose").onclick = () => { if (Voice.isRecording()) Voice.stopRecording(); closeModal(); };
   $("#modal").addEventListener("click", e => { if (e.target.id === "modal") closeModal(); });
   document.addEventListener("keydown", e => { if (e.key === "Escape") { closeModal(); $("#results").classList.add("hidden"); } });
 
@@ -147,7 +156,9 @@
     limitBusy = false;
     $("#limit").classList.toggle("hidden", !lim);
     if (lim) $("#limitVal").textContent = lim;
-    $("#speedo").classList.toggle("over", !!(lim && S.speed > lim + 5));
+    const over = !!(lim && S.speed > lim + 5);
+    $("#speedo").classList.toggle("over", over);
+    if (lim && S.speed > lim + 10 && S.nav && Date.now() - (S.lastSpeedWarn || 0) > 60000) { S.lastSpeedWarn = Date.now(); say(["speeding"], "Lassíts, túl gyors vagy."); }
   }
 
   // ================= gyorsgombok (mentett + legutóbbi helyek) =================
@@ -291,6 +302,8 @@
     try { (await Store.listReports({ s: s - .01, w: w - .01, n: n + .01, e: e + .01 })).forEach(r => S.reports.set(r.id, r)); renderReports(); } catch {}
   }
 
+  const routeOpts = () => ({ avoidTolls: S.settings.avoidTolls, avoidMotorways: S.settings.avoidMotorways, avoidUnpaved: S.settings.avoidUnpaved });
+
   async function planRoute() {
     if (!S.dest) return;
     let from = S.me;
@@ -300,7 +313,7 @@
     openSheet(`<p class="s-title">Útvonalak keresése…</p><p class="s-sub">A közösségi jelzéseket is figyelembe veszem.</p>`);
     try {
       const pts = [from, ...S.stops.map(s => s.pos), S.dest];
-      const routes = await Routing.route(pts, { avoidTolls: S.settings.avoidTolls, avoidMotorways: S.settings.avoidMotorways });
+      const routes = await Routing.route(pts, routeOpts());
       await ensureReportsAround(routes[0].line);
       const active = [...S.reports.values()];
       routes.forEach(rt => { const x = Reports.onRoute(active, rt); rt.hits = x.hits; rt.penalty = x.penalty; rt.score = rt.duration + x.penalty; });
@@ -362,7 +375,8 @@
     const defTime = `${String(nowPlus.getHours()).padStart(2, "0")}:${String(nowPlus.getMinutes()).padStart(2, "0")}`;
     const tval = S.depart.time ? Geo.fmtClock(new Date(S.depart.time)) : defTime;
     const stops = [`<div class="stop"><i class="dot"></i><span>${S.me ? "Saját hely" : "Térkép közepe"}</span></div>`,
-      ...S.stops.map((s, i) => `<div class="stop"><i class="dot"></i><span>${escapeHtml(s.name)}</span><button data-rmstop="${i}" aria-label="Törlés">×</button></div>`),
+      ...S.stops.map((s, i) => `<div class="stop"><i class="dot"></i><span>${i + 1}. ${escapeHtml(s.name)}</span>
+        ${i > 0 ? `<button data-upstop="${i}" aria-label="Feljebb">↑</button>` : ""}<button data-rmstop="${i}" aria-label="Törlés">×</button></div>`),
       `<div class="stop"><i class="dot end"></i><span><b>${escapeHtml(S.destName || "Úti cél")}</b></span></div>`].join("");
     const rows = S.routes.map((rt, i) => {
       const ti = timeInfo(rt);
@@ -371,14 +385,15 @@
         <div class="meta"><b>${rt.roads.length ? escapeHtml(rt.roads.join(", ")) : Geo.fmtDist(rt.distance)}</b>
           <small>${Geo.fmtDist(rt.distance)} · ${ti.line}</small>
           ${trafficBar(rt)}
-          <div>${i === 0 && S.routes.length > 1 ? '<span class="tag ok">Leggyorsabb</span>' : ""}${rt.penalty >= 60 ? `<span class="tag warn">+${Math.round(rt.penalty / 60)} p jelzések miatt</span>` : ""}${hitTags(rt.hits)}${!rt.hits.length ? '<span class="tag">nincs jelzés</span>' : ""}</div>
+          <div>${i === 0 && S.routes.length > 1 ? '<span class="tag ok">Leggyorsabb</span>' : ""}${rt.penalty >= 60 ? `<span class="tag warn">+${Math.round(rt.penalty / 60)} p jelzések miatt</span>` : ""}${hitTags(rt.hits)}${!rt.hits.length ? '<span class="tag">nincs jelzés</span>' : ""}${rt.engine === "osrm" && S.settings.avoidUnpaved ? '<span class="tag warn">földutak most nincsenek kizárva</span>' : ""}</div>
         </div><div class="radio"></div></button>`;
     }).join("");
     const f = S.fuelOnRoute;
     const fuelHtml = f ? `<div class="extra">⛽ <span>Legolcsóbb az úton: <b>${escapeHtml(f.brand)}</b> ${f.price} Ft${f.detour > 30 ? ` · +${Math.round(f.detour / 60)} p` : ""}</span><button class="go" id="addFuel">Megálló</button></div>` : "";
     openSheet(`
       <div class="stops">${stops}</div>
-      <button class="addstop" id="addStop">＋ Megálló hozzáadása</button>
+      <div class="row" style="gap:14px;flex:none"><button class="addstop" id="addStop" style="flex:none">＋ Megálló hozzáadása</button>
+        ${S.stops.length >= 2 ? '<button class="addstop" id="optStops" style="flex:none">⇅ Legjobb sorrend</button>' : ""}</div>
       <div class="seg" id="departSeg">
         <button data-m="now" class="${S.depart.mode === "now" ? "on" : ""}">Indulás most</button>
         <button data-m="later" class="${S.depart.mode === "later" ? "on" : ""}">Később</button>
@@ -388,7 +403,8 @@
       <div>${rows}</div>
       ${fuelHtml}
       <div class="row" style="margin-top:12px"><button class="btn primary" id="goNav">Indulás</button></div>
-      <div class="row" style="margin-top:8px">
+      <div class="row opts-row" style="margin-top:8px">
+        <button class="btn small" id="optDirt">${S.settings.avoidUnpaved ? "✓ " : ""}Földút nélkül</button>
         <button class="btn small" id="optToll">${S.settings.avoidTolls ? "✓ " : ""}Fizetős nélkül</button>
         <button class="btn small" id="optMw">${S.settings.avoidMotorways ? "✓ " : ""}Autópálya nélkül</button>
         <button class="btn small" id="goSim" title="Kipróbálás GPS nélkül">Szimuláció</button>
@@ -396,6 +412,18 @@
       </div>`);
     $$(".rt").forEach(b => b.onclick = () => { S.sel = +b.dataset.r; drawRoutes(); showRouteSheet(); findFuelOnRoute(S.routes[S.sel]); });
     $$("[data-rmstop]").forEach(b => b.onclick = () => { S.stops.splice(+b.dataset.rmstop, 1); planRoute(); });
+    $$("[data-upstop]").forEach(b => b.onclick = () => { const i = +b.dataset.upstop; [S.stops[i - 1], S.stops[i]] = [S.stops[i], S.stops[i - 1]]; planRoute(); });
+    const os = $("#optStops");
+    if (os) os.onclick = async () => {
+      os.disabled = true; os.textContent = "Számolom…";
+      try {
+        const pts = [S.planFrom || myPos(), ...S.stops.map(x => x.pos), S.dest];
+        const order = await Routing.optimize(pts);
+        const inner = order.filter(i => i > 0 && i < pts.length - 1).map(i => S.stops[i - 1]);
+        if (inner.length === S.stops.length) S.stops = inner;
+        toast("Megállók sorrendje optimalizálva"); planRoute();
+      } catch (e) { toast(e.message || "Most nem sikerült optimalizálni."); os.disabled = false; os.textContent = "⇅ Legjobb sorrend"; }
+    };
     $("#addStop").onclick = () => { S.addingStop = true; q.value = ""; $("#sheet").classList.add("mini"); setSheetH(); q.focus(); toast("Keresd meg a megállót", 2500); };
     $$("#departSeg button").forEach(b => b.onclick = () => {
       S.depart.mode = b.dataset.m;
@@ -409,6 +437,7 @@
       if (S.depart.mode === "later" && d < Date.now() - 60000) d.setDate(d.getDate() + 1);
       S.depart.time = +d; showRouteSheet();
     };
+    $("#optDirt").onclick = () => { S.settings.avoidUnpaved = !S.settings.avoidUnpaved; save.settings(); planRoute(); };
     $("#optToll").onclick = () => { S.settings.avoidTolls = !S.settings.avoidTolls; save.settings(); planRoute(); };
     $("#optMw").onclick = () => { S.settings.avoidMotorways = !S.settings.avoidMotorways; save.settings(); planRoute(); };
     $("#goNav").onclick = () => startNav();
@@ -459,7 +488,7 @@
     $("#maneuver").classList.remove("hidden");
     $("#btnVoice").classList.remove("hidden"); updateVoiceBtn();
     try { wakeLock = await navigator.wakeLock?.request("screen"); } catch {}
-    speak(`Indulás. ${Geo.fmtDur(rt.score)} az út.`);
+    say(["start"], `Indulás. ${Geo.fmtDur(rt.score)} az út.`);
     if (S.me) { MapView.follow(S.me, S.heading, true, S.speed); navTick(); } else renderNavSheet(rt.distance);
   }
 
@@ -490,7 +519,7 @@
         <button class="btn" id="navPark">🅿️ Parkoló a célnál</button>
       </div>`;
     if ($("#navStop")) $("#sheetBody").innerHTML = html; else openSheet(html);
-    $("#navStop").onclick = () => { stopNav(); speak("Navigáció vége."); };
+    $("#navStop").onclick = () => { stopNav(); say(["end"], "Navigáció vége."); };
     $("#navShare").onclick = () => shareEta(remSec);
     $("#navPark").onclick = () => parkingNearDest(true);
   }
@@ -514,7 +543,7 @@
       .map(p => ({ p, dist: Geo.dist(d, [p.lat, p.lng]) })).sort((a, b) => a.dist - b.dist).slice(0, 5);
     const free = [...S.reports.values()].filter(x => x.type === "parking" && x.sub !== "full" && Geo.dist(d, [x.lat, x.lng]) < 600);
     if (!list.length && !free.length) { if (manual) toast("Nem találtam parkolót a cél közelében."); return; }
-    if (!manual) { toast(`🅿️ ${list.length + free.length} parkoló a cél közelében — koppints a 🅿️ gombra`, 5000); speak("Parkolót találtam a cél közelében."); return; }
+    if (!manual) { toast(`🅿️ ${list.length + free.length} parkoló a cél közelében — koppints a 🅿️ gombra`, 5000); say(["parking"], "Parkolót találtam a cél közelében."); return; }
     const row = (name, sub, pos) => `<button class="rt" data-park="${pos[0]},${pos[1]}" data-name="${escapeHtml(name)}"><div class="meta"><b>${escapeHtml(name)}</b><small>${sub}</small></div><span class="tag blue">Ide</span></button>`;
     openModal("Parkolás a cél közelében", `<p class="m-sub">${escapeHtml(S.destName || "")}</p>
       ${free.map(x => row("Szabad hely (jelzés)", `${Geo.fmtDist(Geo.dist(d, [x.lat, x.lng]))} · ${Geo.fmtAgo(x.created_at)}`, [x.lat, x.lng])).join("")}
@@ -541,7 +570,7 @@
 
     const total = rt.cum[rt.cum.length - 1];
     const remaining = Math.max(0, total - pr.along);
-    if (remaining < 30) { speak("Megérkeztél az úti célhoz."); toast("🏁 Megérkeztél!", 4000); stopNav(); return; }
+    if (remaining < 30) { say(["arrive"], "Megérkeztél az úti célhoz."); toast("🏁 Megérkeztél!", 4000); stopNav(); return; }
 
     const si = rt.steps.findIndex(s => s.along > pr.along + 8);
     const step = rt.steps[si] || rt.steps[rt.steps.length - 1];
@@ -549,7 +578,7 @@
     const dNext = Math.max(0, step.along - pr.along);
     $("#mvArrow").innerHTML = Routing.svgArrow(step.arrow);
     $("#mvDist").textContent = Geo.fmtDist(dNext);
-    $("#mvInstr").textContent = step.name && step.type !== "arrive" ? step.name : step.text;
+    $("#mvInstr").textContent = step.text + (step.name && step.type !== "arrive" ? ` · ${step.name}` : "");
     $("#mvInstr").title = step.text;
     const showThen = next && next.along - step.along < 600;
     $("#mvThen").classList.toggle("hidden", !showThen);
@@ -564,9 +593,11 @@
       if (dNext <= th && !nav.spoken.has(key)) {
         ths.forEach(t => { if (t >= th) nav.spoken.add(`${si}:${t}`); });
         const pre = th === ths[2] ? "" : `${spokenDist(dNext)} múlva `;
-        let say = step.say || `${step.text.toLowerCase()}${step.name ? ", " + step.name : ""}`;
-        if (th === ths[2] && showThen) say += `, utána ${(next.say || next.text).toLowerCase()}`;
-        speak(pre + say);
+        let sayText = step.say || `${step.text.toLowerCase()}${step.name ? ", " + step.name : ""}`;
+        if (th === ths[2] && showThen) sayText += `, utána ${(next.say || next.text).toLowerCase()}`;
+        const ids = [th === ths[2] ? null : Voice.distClip(dNext), step.key];
+        if (th === ths[2] && showThen && next.key) ids.push("then", next.key);
+        say(ids, pre + sayText);
         break;
       }
     }
@@ -578,12 +609,12 @@
   async function reroute(quiet) {
     const nav = S.nav; if (!nav) return;
     nav.lastReroute = Date.now(); nav.offCount = 0;
-    if (!quiet) { toast("Útvonal újratervezése…"); speak("Újratervezés."); }
+    if (!quiet) { toast("Útvonal újratervezése…"); say(["reroute"], "Újratervezés."); }
     try {
       // a már elhagyott megállókat kihagyjuk
       const rest = S.stops.filter(s => Geo.nearestOnLine(s.pos, nav.rt.line).i > nav.idx);
       S.stops = rest;
-      const [rt] = await Routing.route([S.me || MapView.center(), ...rest.map(s => s.pos), S.dest], { avoidTolls: S.settings.avoidTolls, avoidMotorways: S.settings.avoidMotorways, alternatives: false });
+      const [rt] = await Routing.route([S.me || MapView.center(), ...rest.map(s => s.pos), S.dest], { ...routeOpts(), alternatives: false });
       if (!S.nav) return;
       const x = Reports.onRoute([...S.reports.values()], rt); rt.hits = x.hits; rt.penalty = x.penalty; rt.score = rt.duration + x.penalty;
       Object.assign(nav, { rt, idx: 0, spoken: new Set(), routeAlong: new Map() });
@@ -596,7 +627,7 @@
     $("#btnVoice").classList.toggle("on", S.settings.voice);
     $("#voiceIco").innerHTML = S.settings.voice ? '<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 9a4 4 0 010 6M18.5 6.5a8 8 0 010 11"/>' : '<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M17 9l5 6M22 9l-5 6"/>';
   }
-  $("#btnVoice").onclick = () => { S.settings.voice = !S.settings.voice; save.settings(); updateVoiceBtn(); if (!S.settings.voice) try { synth.cancel(); } catch {} toast(S.settings.voice ? "Hang bekapcsolva" : "Hang kikapcsolva"); };
+  $("#btnVoice").onclick = () => { S.settings.voice = !S.settings.voice; save.settings(); updateVoiceBtn(); if (!S.settings.voice) { try { synth.cancel(); } catch {} Voice.stop(); } toast(S.settings.voice ? "Hang bekapcsolva" : "Hang kikapcsolva"); };
 
   // ================= szimuláció =================
   function startSim() {
@@ -681,32 +712,35 @@
     $$(".tile[data-t]").forEach(b => b.onclick = () => b.dataset.t === "fuelprice" ? fuelPriceNearby() : openReportDetail(b.dataset.t, point));
   }
 
+  // két koppintás: típus → altípus = elküldve (vezetés közben ez kell)
   function openReportDetail(type, point) {
     const t = T[type];
     openModal(`${t.ico} ${t.label}`, `
-      <div class="subs">${t.subs.map(([k, l], i) => `<button data-s="${k}" class="${i === 0 ? "on" : ""}">${l}</button>`).join("")}</div>
-      <div class="field"><label>Megjegyzés (nem kötelező)</label><input id="repNote" maxlength="120" placeholder="pl. a benzinkút után, jobb sávban"></div>
-      <div class="row"><button class="btn primary" id="repSend">Küldés</button></div>`);
-    let sub = t.subs[0][0];
-    $$(".subs button").forEach(b => b.onclick = () => { sub = b.dataset.s; $$(".subs button").forEach(x => x.classList.toggle("on", x === b)); });
-    $("#repSend").onclick = async () => {
-      const pos = point || myPos();
-      const ttl = Reports.ttlOf(type, sub);
-      const row = { type, sub, lat: pos[0], lng: pos[1], heading: S.heading == null ? null : Math.round(S.heading),
-        note: $("#repNote").value.trim().slice(0, 120) || null, nick: S.settings.nick || null,
-        expires_at: new Date(Date.now() + ttl * 60000).toISOString() };
-      $("#repSend").disabled = true;
-      try {
-        const saved = await Store.addReport(row);
-        S.reports.set(saved.id, saved);
-        ls.set("uthirnok.votes", { ...ls.get("uthirnok.votes", {}), [saved.id]: 1 });
-        S.alerted.set(saved.id, "passed");
-        S.stats.reports++; save.stats();
-        renderReports(); closeModal();
-        toast(`${t.ico} Köszi! ${ttl >= 1440 ? Math.round(ttl / 1440) + " napig" : ttl >= 60 ? Math.round(ttl / 60) + " óráig" : ttl + " percig"} látszik.`);
-        if (S.nav && ["jam", "accident", "closure"].includes(type)) { const x = Reports.onRoute([...S.reports.values()], S.nav.rt); S.nav.rt.hits = x.hits; }
-      } catch (e) { toast("Nem sikerült elküldeni: " + e.message); $("#repSend").disabled = false; }
-    };
+      <p class="m-sub">Koppints, és már megy is.</p>
+      <div class="subs big">${t.subs.map(([k, l]) => `<button data-s="${k}">${l}</button>`).join("")}</div>
+      ${S.nav ? "" : `<div class="field"><label>Megjegyzés (nem kötelező, a küldés előtt írd be)</label><input id="repNote" maxlength="120" placeholder="pl. a benzinkút után, jobb sávban"></div>`}`);
+    $$(".subs button").forEach(b => b.onclick = () => sendReport(type, b.dataset.s, point, b));
+  }
+
+  async function sendReport(type, sub, point, btn) {
+    const t = T[type];
+    const pos = point || myPos();
+    const ttl = Reports.ttlOf(type, sub);
+    const row = { type, sub, lat: pos[0], lng: pos[1], heading: S.heading == null ? null : Math.round(S.heading),
+      note: $("#repNote")?.value.trim().slice(0, 120) || null, nick: S.settings.nick || null,
+      expires_at: new Date(Date.now() + ttl * 60000).toISOString() };
+    $$(".subs button").forEach(x => x.disabled = true);
+    if (btn) btn.classList.add("on");
+    try {
+      const saved = await Store.addReport(row);
+      S.reports.set(saved.id, saved);
+      ls.set("uthirnok.votes", { ...ls.get("uthirnok.votes", {}), [saved.id]: 1 });
+      S.alerted.set(saved.id, "passed");
+      S.stats.reports++; save.stats();
+      renderReports(); closeModal();
+      toast(`${t.ico} Köszi! ${ttl >= 1440 ? Math.round(ttl / 1440) + " napig" : ttl >= 60 ? Math.round(ttl / 60) + " óráig" : ttl + " percig"} látszik.`);
+      if (S.nav && ["jam", "accident", "closure"].includes(type)) { const x = Reports.onRoute([...S.reports.values()], S.nav.rt); S.nav.rt.hits = x.hits; }
+    } catch (e) { toast("Nem sikerült elküldeni: " + e.message); $$(".subs button").forEach(x => x.disabled = false); }
   }
 
   // benzinár beírása a legközelebbi kúthoz
@@ -766,7 +800,7 @@
         S.alerted.set(c.id, "warned");
         const t = T[c.type];
         const lbl = c.user ? t.label : `Fix traffipax${c.limit ? ` · ${c.limit}` : ""}`;
-        speak(`Figyelem! ${spokenDist(ahead)} múlva ${c.user ? t.label.toLowerCase() : "traffipax"}.`);
+        say([c.user ? "al_" + c.type : "al_camera"], `Figyelem! ${spokenDist(ahead)} múlva ${c.user ? t.label.toLowerCase() : "traffipax"}.`);
         best = { c, ahead, lbl };
       } else if (state === "warned" && ahead < -25) {
         S.alerted.set(c.id, "passed");
@@ -804,6 +838,7 @@
     $("#alBar").classList.add("hidden");
     $("#alActions").classList.remove("hidden");
     $("#alert").classList.remove("hidden");
+    say(["still"], `${t.label}: még ott van?`);
     $("#alYes").onclick = () => { doVote(c.id, 1); hideAlert(); };
     $("#alNo").onclick = () => { doVote(c.id, -1); hideAlert(); };
     clearTimeout(alertTimer); alertTimer = setTimeout(hideAlert, 12000);
@@ -923,6 +958,13 @@
       <div class="stat"><div><b>${S.stats.reports}</b><small>jelzésed</small></div><div><b>${S.stats.votes}</b><small>megerősítésed</small></div></div>
       <div class="field"><label>Beceneved (a jelzéseid mellett látszik)</label><input id="setNick" maxlength="24" value="${escapeHtml(S.settings.nick)}" placeholder="pl. Bence"></div>
       <label class="switch"><span>🔊 Hangos navigáció és figyelmeztetés</span><input type="checkbox" id="setVoice" ${S.settings.voice ? "checked" : ""}></label>
+      <div class="field"><label>Milyen hangon szóljon?</label>
+        <div class="seg" id="voiceSeg">${[["recorded", "Felvett emberi hang"], ["tts", "Gépi hang"]].map(([k, l]) => `<button data-vm="${k}" class="${S.settings.voiceMode === k ? "on" : ""}">${l}</button>`).join("")}</div>
+        ${S.settings.voiceMode === "recorded" ? `<button class="btn" id="openRec">🎙️ Hang felvétele · ${Voice.count()}/${Voice.PHRASES.length} kész</button>
+        <label class="hint" style="display:flex;gap:8px;align-items:center;margin-top:6px">Ha egy mondat nincs felvéve:
+          <select id="voiceFb" style="background:var(--soft);border:0;border-radius:8px;padding:6px"><option value="beep" ${S.settings.voiceFallback === "beep" ? "selected" : ""}>sípoljon</option><option value="tts" ${S.settings.voiceFallback === "tts" ? "selected" : ""}>gépi hang</option></select></label>` : ""}
+      </div>
+      <label class="switch"><span>Burkolatlan utak (földutak) kerülése<span class="hint">Valhalla útvonaltervezővel</span></span><input type="checkbox" id="setDirt" ${S.settings.avoidUnpaved ? "checked" : ""}></label>
       <label class="switch"><span>Fizetős utak kerülése</span><input type="checkbox" id="setToll" ${S.settings.avoidTolls ? "checked" : ""}></label>
       <label class="switch"><span>Autópályák kerülése</span><input type="checkbox" id="setMw" ${S.settings.avoidMotorways ? "checked" : ""}></label>
       ${placesHtml}
@@ -932,12 +974,78 @@
       ${Store.live ? "" : `<div class="row"><button class="btn small" id="setDemo">Demo jelzések a közelbe</button></div>`}
       <p class="hint">Verzió: ${escapeHtml(window.UTHIRNOK_VERSION || "dev")} · Térkép: ${MapView.usingFallback ? "OpenStreetMap (tartalék)" : "OpenFreeMap"} · © OpenStreetMap közreműködők · Útvonal: OSRM · Keresés: Nominatim</p>`);
     $("#setNick").oninput = e => { S.settings.nick = e.target.value.trim(); save.settings(); };
-    $("#setVoice").onchange = e => { S.settings.voice = e.target.checked; save.settings(); updateVoiceBtn(); if (e.target.checked) speak("Hang bekapcsolva."); };
+    $("#setVoice").onchange = e => { S.settings.voice = e.target.checked; save.settings(); updateVoiceBtn(); if (e.target.checked) say(["start"], "Hang bekapcsolva."); };
+    $$("#voiceSeg button").forEach(b => b.onclick = () => { S.settings.voiceMode = b.dataset.vm; save.settings(); openSettings(); });
+    const fb = $("#voiceFb"); if (fb) fb.onchange = () => { S.settings.voiceFallback = fb.value; save.settings(); };
+    const orb = $("#openRec"); if (orb) orb.onclick = () => openRecorder();
+    $("#setDirt").onchange = e => { S.settings.avoidUnpaved = e.target.checked; save.settings(); };
     $("#setToll").onchange = e => { S.settings.avoidTolls = e.target.checked; save.settings(); };
     $("#setMw").onchange = e => { S.settings.avoidMotorways = e.target.checked; save.settings(); };
     $$("[data-delplace]").forEach(b => b.onclick = () => { delete S.places[b.dataset.delplace]; save.places(); renderChips(); openSettings(); });
     bindThemeSeg();
     const demo = $("#setDemo"); if (demo) demo.onclick = addDemo;
+  }
+
+  // ================= hangfelvevő =================
+  function openRecorder() {
+    const groups = Voice.GROUPS.map(([g, list]) => `<p class="rec-g">${g}</p>` + list.map(([id, text]) => `
+      <div class="rec-row" data-id="${id}">
+        <span class="rec-ok">${Voice.has(id) ? "✓" : ""}</span>
+        <span class="rec-t">${escapeHtml(text)}</span>
+        <button class="rec-b play" data-play="${id}" ${Voice.has(id) ? "" : "disabled"} aria-label="Lejátszás">▶</button>
+        <button class="rec-b rec" data-rec="${id}" aria-label="Felvétel">●</button>
+      </div>`).join("")).join("");
+    openModal("Hang felvétele", `
+      <p class="m-sub">Nyomd meg a ● gombot, mondd ki a mondatot, majd nyomd meg újra. A csendet az app levágja.
+        Csendes helyen, a mikrofonhoz közel, természetes hangon. A haverod is felveheti, és át is küldhetitek egymásnak.</p>
+      <div class="stat"><div><b id="recCount">${Voice.count()}/${Voice.PHRASES.length}</b><small>mondat kész</small></div>
+        <div><button class="btn small" id="recTest" style="width:100%">▶ Próba</button><small>„300 m múlva, fordulj jobbra”</small></div></div>
+      <div class="rec-list">${groups}</div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn small" id="recExport">📤 Csomag mentése</button>
+        <label class="btn small" style="cursor:pointer">📥 Betöltés<input type="file" id="recImport" accept=".json,application/json" hidden></label>
+        <button class="btn small danger" id="recClear">Törlés</button>
+      </div>`);
+    const refresh = id => {
+      const row = document.querySelector(`.rec-row[data-id="${id}"]`); if (!row) return;
+      row.querySelector(".rec-ok").textContent = Voice.has(id) ? "✓" : "";
+      row.querySelector("[data-play]").disabled = !Voice.has(id);
+      $("#recCount").textContent = `${Voice.count()}/${Voice.PHRASES.length}`;
+    };
+    $$("[data-play]").forEach(b => b.onclick = () => Voice.play([b.dataset.play]));
+    $$("[data-rec]").forEach(b => b.onclick = async () => {
+      const id = b.dataset.rec;
+      if (Voice.isRecording()) {
+        if (!b.classList.contains("on")) return toast("Előbb állítsd le az előző felvételt.");
+        b.classList.remove("on"); b.textContent = "…";
+        const blob = await Voice.stopRecording();
+        b.textContent = "●";
+        if (blob && blob.size > 200) { await Voice.put(id, blob); refresh(id); Voice.play([id]); }
+        else toast("Nem sikerült felvenni, próbáld újra.");
+        return;
+      }
+      try { await Voice.startRecording(); b.classList.add("on"); b.textContent = "■"; }
+      catch (e) { toast("Nem érem el a mikrofont — engedélyezd a beállításokban."); }
+    });
+    $("#recTest").onclick = () => { if (!Voice.play(["d300", "turn_right"])) toast("Ehhez a „300 méter múlva” és a „fordulj jobbra” kell."); };
+    $("#recExport").onclick = async () => {
+      if (!Voice.count()) return toast("Még nincs felvett mondat.");
+      const blob = await Voice.exportPack(S.settings.nick ? `${S.settings.nick} hangja` : "Saját hang");
+      const file = new File([blob], "uthirnok-hang.json", { type: "application/json" });
+      try { if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: "Úthírnök hangcsomag" }); return; } } catch {}
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "uthirnok-hang.json"; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    };
+    $("#recImport").onchange = async e => {
+      const f = e.target.files[0]; if (!f) return;
+      try { const r = await Voice.importPack(f); toast(`Betöltve: ${r.name} (${r.n} mondat)`); openRecorder(); }
+      catch (err) { toast(err.message || "Nem sikerült betölteni."); }
+    };
+    $("#recClear").onclick = async () => {
+      const b = $("#recClear");
+      if (b.dataset.sure) { await Voice.clear(); openRecorder(); toast("Felvett hang törölve."); }
+      else { b.dataset.sure = 1; b.textContent = "Biztos?"; }
+    };
   }
 
   async function addDemo() {

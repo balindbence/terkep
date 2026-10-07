@@ -10,7 +10,7 @@ if (!fs.existsSync(A)) { console.error("Nincs android/ mappa - elobb: npx cap ad
 // 1) engedélyek
 const manPath = path.join(A, "src", "main", "AndroidManifest.xml");
 let man = fs.readFileSync(manPath, "utf8");
-const perms = ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION", "WAKE_LOCK"];
+const perms = ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION", "WAKE_LOCK", "RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS"];
 for (const p of perms) {
   if (!man.includes(`android.permission.${p}"`))
     man = man.replace("</manifest>", `    <uses-permission android:name="android.permission.${p}" />\n</manifest>`);
