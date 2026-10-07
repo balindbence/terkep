@@ -1,7 +1,7 @@
 // Úthírnök service worker: app-héj offline, térképcsempék gyorsítótárban
-const VER = "uthirnok-v3";
+const VER = "uthirnok-v4";
 const SHELL = ["./", "index.html", "style.css", "config.js", "manifest.webmanifest",
-  "js/version.js", "js/geo.js", "js/store.js", "js/reports.js", "js/routing.js", "js/pois.js", "js/voice.js", "js/mapview.js", "js/app.js",
+  "js/version.js", "js/geo.js", "js/store.js", "js/reports.js", "js/routing.js", "js/pois.js", "js/costs.js", "js/voice.js", "js/mapview.js", "js/app.js",
   "icons/icon-192.png", "icons/icon-512.png",
   "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css", "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"];
 const TILES = "uthirnok-tiles";

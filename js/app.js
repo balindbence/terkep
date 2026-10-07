@@ -9,7 +9,7 @@
   // ================= állapot =================
   const S = {
     me: null, heading: null, speed: 0, follow: true,
-    settings: Object.assign({ voice: true, voiceMode: "recorded", voiceFallback: "beep", nick: "", avoidTolls: false, avoidMotorways: false, avoidUnpaved: true, theme: "auto",
+    settings: Object.assign({ voice: true, voiceMode: "recorded", voiceFallback: "beep", car: { fuel: "95", consumption: 6.5, price: null }, vignette: { type: "none", until: "", counties: [] }, nick: "", avoidTolls: false, avoidMotorways: false, avoidUnpaved: true, theme: "auto",
       layers: { reports: true, camera: true, fuel: true, parking: false } }, ls.get("uthirnok.settings", {})),
     places: ls.get("uthirnok.places", {}),          // {home:{name,pos}, work:…, school:…}
     recent: ls.get("uthirnok.recent", []),          // [{name, sub, pos}]
@@ -385,7 +385,7 @@
         <div class="meta"><b>${rt.roads.length ? escapeHtml(rt.roads.join(", ")) : Geo.fmtDist(rt.distance)}</b>
           <small>${Geo.fmtDist(rt.distance)} · ${ti.line}</small>
           ${trafficBar(rt)}
-          <div>${i === 0 && S.routes.length > 1 ? '<span class="tag ok">Leggyorsabb</span>' : ""}${rt.penalty >= 60 ? `<span class="tag warn">+${Math.round(rt.penalty / 60)} p jelzések miatt</span>` : ""}${hitTags(rt.hits)}${!rt.hits.length ? '<span class="tag">nincs jelzés</span>' : ""}${rt.engine === "osrm" && S.settings.avoidUnpaved ? '<span class="tag warn">földutak most nincsenek kizárva</span>' : ""}</div>
+          <div>${i === 0 && S.routes.length > 1 ? '<span class="tag ok">Leggyorsabb</span>' : ""}${rt.penalty >= 60 ? `<span class="tag warn">+${Math.round(rt.penalty / 60)} p jelzések miatt</span>` : ""}${hitTags(rt.hits)}${!rt.hits.length ? '<span class="tag">nincs jelzés</span>' : ""}${rt.hasToll ? '<span class="tag warn">🛣️ fizetős</span>' : ""}<span class="tag">⛽ ~${Costs.fmtFt(Costs.fuelCost(rt.distance, S.settings.car).ft)}</span>${rt.engine === "osrm" && S.settings.avoidUnpaved ? '<span class="tag warn">földutak most nincsenek kizárva</span>' : ""}</div>
         </div><div class="radio"></div></button>`;
     }).join("");
     const f = S.fuelOnRoute;
@@ -402,6 +402,7 @@
       ${S.depart.mode !== "now" ? `<div class="timepick">${S.depart.mode === "later" ? "Indulás:" : "Érkezzek:"} <input type="time" id="departTime" value="${tval}"></div>` : ""}
       <div>${rows}</div>
       ${fuelHtml}
+      <div id="costCard">${costCardHtml(S.routes[S.sel])}</div>
       <div class="row" style="margin-top:12px"><button class="btn primary" id="goNav">Indulás</button></div>
       <div class="row opts-row" style="margin-top:8px">
         <button class="btn small" id="optDirt">${S.settings.avoidUnpaved ? "✓ " : ""}Földút nélkül</button>
@@ -441,6 +442,7 @@
     $("#optToll").onclick = () => { S.settings.avoidTolls = !S.settings.avoidTolls; save.settings(); planRoute(); };
     $("#optMw").onclick = () => { S.settings.avoidMotorways = !S.settings.avoidMotorways; save.settings(); planRoute(); };
     $("#goNav").onclick = () => startNav();
+    bindCostCard(); loadCost(S.routes[S.sel]);
     $("#goSim").onclick = () => startSim();
     $("#goClose").onclick = clearAll;
     const af = $("#addFuel");
@@ -450,6 +452,77 @@
       const rt = S.routes[S.sel];
       S.stops.sort((a, b) => Geo.nearestOnLine(a.pos, rt.line).i - Geo.nearestOnLine(b.pos, rt.line).i);
       planRoute();
+    };
+  }
+
+  // ================= költség + matrica =================
+  function costCardHtml(rt) {
+    if (!rt) return "";
+    const f = Costs.fuelCost(rt.distance, S.settings.car);
+    const fuelRow = `<div class="cost-row"><span>⛽ Üzemanyag</span><b>~${Costs.fmtFt(f.ft)}</b></div>
+      <div class="hint">${Geo.fmtDist(rt.distance)} · ${String(f.cons).replace(".", ",")} l/100 km · ${f.price} Ft/l (${Costs.FUEL[f.fuel].label})</div>`;
+    let vig = "", total = f.ft;
+    if (!rt.hasToll) vig = `<div class="cost-row"><span>🛣️ Matrica</span><b class="ok-t">nem kell</b></div>`;
+    else if (!rt.toll) vig = `<div class="cost-row"><span>🛣️ Matrica</span><b>${rt.tollErr ? "nem tudom ellenőrizni" : rt.tollPartial ? "vármegyék ellenőrzése…" : "ellenőrzöm…"}</b></div>
+      ${rt.tollPartial ? `<div class="hint">${rt.tollPartial.km.toFixed(0)} km fizetős${rt.tollPartial.names.length ? " (" + rt.tollPartial.names.join(", ") + ")" : ""}</div>` : ""}`;
+    else {
+      const cs = rt.toll.counties;
+      const covered = Costs.myCoverage(S.settings.vignette, cs);
+      const where = `${rt.toll.km.toFixed(0)} km fizetős${rt.toll.sections.flatMap(s => s.names).length ? " (" + [...new Set(rt.toll.sections.flatMap(s => s.names))].slice(0, 3).join(", ") + ")" : ""}`;
+      if (covered) vig = `<div class="cost-row"><span>🛣️ Matrica</span><b class="ok-t">✓ érvényes a matricád</b></div><div class="hint">${where} · ${cs.join(", ")}</div>`;
+      else {
+        const o = Costs.options(cs, S.settings.vignette);
+        const best = o.opts[0];
+        total += best.price;
+        vig = `<div class="cost-row warn-row"><span>⚠️ Matrica kell</span><b>${cs.length ? cs.join(", ") : "fizetős szakasz"}</b></div>
+          <div class="hint">${where}</div>
+          <div class="vig-opts">${o.opts.slice(0, 4).map(x => `<span class="tag ${x === best ? "ok" : ""}">${x.label}: ${Costs.fmtFt(x.price)}</span>`).join("")}</div>
+          <div class="row" style="margin-top:8px"><button class="btn small" id="noTollBtn">${rt.noToll ? `Fizetős nélkül: ${rt.noToll.d >= 0 ? "+" : ""}${Math.round(rt.noToll.d / 60)} perc` : "Fizetős út nélkül?"}</button>
+          <button class="btn small" id="myVigBtn">Van matricám</button></div>`;
+      }
+    }
+    return `<div class="cost-card">${fuelRow}${vig}<div class="cost-row total"><span>Összesen</span><b>~${Costs.fmtFt(total)}</b></div></div>`;
+  }
+  function bindCostCard() {
+    const nt = $("#noTollBtn"); if (nt) nt.onclick = () => { S.settings.avoidTolls = true; save.settings(); toast("Fizetős utak nélkül tervezek"); planRoute(); };
+    const mv = $("#myVigBtn"); if (mv) mv.onclick = () => openVignette();
+  }
+  function refreshCostCard(rt) { if (S.routes[S.sel] === rt && $("#costCard")) { $("#costCard").innerHTML = costCardHtml(rt); bindCostCard(); } }
+  async function loadCost(rt) {
+    if (!rt?.hasToll || rt.toll || rt.tollLoading) return;
+    rt.tollLoading = true;
+    try { await Costs.tollInfo(rt, p => { rt.tollPartial = p; refreshCostCard(rt); }); } catch (e) { rt.tollErr = true; console.warn(e); }
+    rt.tollLoading = false;
+    refreshCostCard(rt);
+    // mennyivel tartana tovább fizetős nélkül (csak ha kellene matrica)
+    if (rt.toll && !Costs.myCoverage(S.settings.vignette, rt.toll.counties) && !S.settings.avoidTolls && !rt.noToll) {
+      try {
+        const [alt] = await Routing.route([S.planFrom || myPos(), ...S.stops.map(x => x.pos), S.dest], { ...routeOpts(), avoidTolls: true, alternatives: false });
+        if (!alt.hasToll) { rt.noToll = { d: alt.duration - rt.duration }; refreshCostCard(rt); }
+      } catch {}
+    }
+  }
+
+  function openVignette() {
+    const v = S.settings.vignette;
+    const types = [["none", "Nincs"], ["day", "Napi (országos)"], ["week", "10 napos (országos)"], ["month", "Havi (országos)"], ["year", "Éves országos"], ["county", "Éves vármegyei"], ["m1region", "M1 regionális éves"]];
+    openModal("🛣️ Matricám", `
+      <div class="field"><label>Milyen e-matricád van?</label><select id="vigType">${types.map(([k, l]) => `<option value="${k}" ${v.type === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+      <div class="field" id="vigUntilF"><label>Meddig érvényes?</label><input type="date" id="vigUntil" value="${v.until || ""}"></div>
+      <div class="field" id="vigCountiesF"><label>Melyik vármegyékre? ${v.type === "m1region" ? "(az M1 régión felül)" : ""}</label>
+        <div class="county-grid">${Costs.COUNTIES.map(c => `<label><input type="checkbox" value="${c}" ${(v.counties || []).includes(c) ? "checked" : ""}> ${c}</label>`).join("")}</div></div>
+      <p class="hint">Az app ez alapján szól, ha olyan fizetős szakaszra vezetne, amire nincs érvényes matricád. Árak: 2026, D1 kategória.</p>
+      <div class="row"><button class="btn primary" id="vigSave">Mentés</button></div>`);
+    const sync = () => {
+      const t = $("#vigType").value;
+      $("#vigUntilF").classList.toggle("hidden", !["day", "week", "month", "year", "county", "m1region"].includes(t));
+      $("#vigCountiesF").classList.toggle("hidden", !["county", "m1region"].includes(t));
+    };
+    $("#vigType").onchange = sync; sync();
+    $("#vigSave").onclick = () => {
+      S.settings.vignette = { type: $("#vigType").value, until: $("#vigUntil").value, counties: $$(".county-grid input:checked").map(i => i.value) };
+      save.settings(); closeModal(); toast("Matrica elmentve");
+      if (S.routes.length && !S.nav) showRouteSheet();
     };
   }
 
@@ -601,6 +674,17 @@
         break;
       }
     }
+    if (rt.toll && !Costs.myCoverage(S.settings.vignette, rt.toll.counties)) {
+      for (const sec of rt.toll.sections) {
+        const ahead = sec.a - pr.along;
+        if (ahead > 0 && ahead < 2000 && !nav.tollWarned?.has(sec.a)) {
+          (nav.tollWarned = nav.tollWarned || new Set()).add(sec.a);
+          showAlert({ c: { id: "toll-" + sec.a, type: "closure", user: false, warn: 2000 }, ahead, lbl: `Fizetős szakasz${sec.names.length ? " · " + sec.names[0] : ""} — nincs rá matricád` });
+          $("#alIco").textContent = "🛣️";
+          say(["al_toll"], "Figyelem, fizetős szakasz következik, és nincs rá érvényes matricád.");
+        }
+      }
+    }
     if (!nav.parkOffered && remaining < 1500) { nav.parkOffered = true; parkingNearDest(false); }
     if (nav.tick % 10 === 0) MapView.setRoute(Reports.trafficSegments(rt, rt.hits || [], pr.along), []);
     renderNavSheet(remaining);
@@ -619,6 +703,7 @@
       const x = Reports.onRoute([...S.reports.values()], rt); rt.hits = x.hits; rt.penalty = x.penalty; rt.score = rt.duration + x.penalty;
       Object.assign(nav, { rt, idx: 0, spoken: new Set(), routeAlong: new Map() });
       S.routes = [rt]; S.sel = 0; drawRoutes(); drawDestMarkers();
+      loadCost(rt);
       if (S.sim) { S.sim.rt = rt; S.sim.d = 0; }
     } catch { toast("Nem sikerült újratervezni."); }
   }
@@ -964,6 +1049,12 @@
         <label class="hint" style="display:flex;gap:8px;align-items:center;margin-top:6px">Ha egy mondat nincs felvéve:
           <select id="voiceFb" style="background:var(--soft);border:0;border-radius:8px;padding:6px"><option value="beep" ${S.settings.voiceFallback === "beep" ? "selected" : ""}>sípoljon</option><option value="tts" ${S.settings.voiceFallback === "tts" ? "selected" : ""}>gépi hang</option></select></label>` : ""}
       </div>
+      <div class="field"><label>🚗 Autóm</label>
+        <div class="seg" id="fuelSeg">${Object.entries(Costs.FUEL).map(([k, f]) => `<button data-fuel-t="${k}" class="${S.settings.car.fuel === k ? "on" : ""}">${f.label}</button>`).join("")}</div>
+        <div class="row" style="gap:8px"><label class="hint" style="flex:1">Fogyasztás (l/100 km)<input id="carCons" type="number" step="0.1" min="2" max="30" value="${S.settings.car.consumption}" style="width:100%;margin-top:4px;background:var(--soft);border:0;border-radius:10px;padding:10px"></label>
+          <label class="hint" style="flex:1">Ár (Ft/l)<input id="carPrice" type="number" min="200" max="1200" placeholder="${Costs.FUEL[S.settings.car.fuel]?.price || 636} (átlag)" value="${S.settings.car.price || ""}" style="width:100%;margin-top:4px;background:var(--soft);border:0;border-radius:10px;padding:10px"></label></div>
+        <button class="btn small" id="openVig">🛣️ Matricám: ${({ none: "nincs", day: "napi", week: "10 napos", month: "havi", year: "éves országos", county: "vármegyei", m1region: "M1 regionális" })[S.settings.vignette.type] || "nincs"}${S.settings.vignette.until ? " · " + S.settings.vignette.until : ""}</button>
+      </div>
       <label class="switch"><span>Burkolatlan utak (földutak) kerülése<span class="hint">Valhalla útvonaltervezővel</span></span><input type="checkbox" id="setDirt" ${S.settings.avoidUnpaved ? "checked" : ""}></label>
       <label class="switch"><span>Fizetős utak kerülése</span><input type="checkbox" id="setToll" ${S.settings.avoidTolls ? "checked" : ""}></label>
       <label class="switch"><span>Autópályák kerülése</span><input type="checkbox" id="setMw" ${S.settings.avoidMotorways ? "checked" : ""}></label>
@@ -978,6 +1069,10 @@
     $$("#voiceSeg button").forEach(b => b.onclick = () => { S.settings.voiceMode = b.dataset.vm; save.settings(); openSettings(); });
     const fb = $("#voiceFb"); if (fb) fb.onchange = () => { S.settings.voiceFallback = fb.value; save.settings(); };
     const orb = $("#openRec"); if (orb) orb.onclick = () => openRecorder();
+    $$("#fuelSeg button").forEach(b => b.onclick = () => { S.settings.car.fuel = b.dataset.fuelT; S.settings.car.price = null; save.settings(); openSettings(); });
+    $("#carCons").onchange = e => { S.settings.car.consumption = Math.max(2, Math.min(30, +e.target.value || 6.5)); save.settings(); };
+    $("#carPrice").onchange = e => { S.settings.car.price = +e.target.value || null; save.settings(); };
+    $("#openVig").onclick = () => openVignette();
     $("#setDirt").onchange = e => { S.settings.avoidUnpaved = e.target.checked; save.settings(); };
     $("#setToll").onchange = e => { S.settings.avoidTolls = e.target.checked; save.settings(); };
     $("#setMw").onchange = e => { S.settings.avoidMotorways = e.target.checked; save.settings(); };

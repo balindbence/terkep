@@ -271,3 +271,16 @@ body.dark .dest-pin { border-color: #fff; background: #11151c; }
 .rec-b.rec { color: var(--bad); font-size: 18px; }
 .rec-b.rec.on { background: var(--bad); color: #fff; animation: pulse 1s infinite; }
 @keyframes pulse { 50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, .2); } }
+
+/* költség kártya */
+.cost-card { background: var(--soft); border-radius: 16px; padding: 10px 12px; margin-top: 10px; font-size: 14px; }
+.cost-row { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; }
+.cost-row b { font-weight: 700; text-align: right; }
+.cost-row.total { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 8px; font-size: 15px; }
+.warn-row span, .warn-row b { color: #b45309; }
+body.dark .warn-row span, body.dark .warn-row b { color: #fbbf24; }
+.ok-t { color: var(--ok); }
+.vig-opts { margin-top: 4px; }
+.county-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; font-size: 13.5px; max-height: 34vh; overflow: auto; }
+.county-grid label { display: flex; gap: 6px; align-items: center; }
+.field select { background: var(--soft); border: 0; border-radius: 12px; padding: 12px; }

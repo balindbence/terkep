@@ -27,7 +27,7 @@ const Voice = (() => {
     ["Figyelmeztetések", [
       ["al_police", "Figyelem, rendőr előtted!"], ["al_camera", "Figyelem, traffipax!"], ["al_accident", "Baleset előtted"],
       ["al_jam", "Dugó előtted"], ["al_closure", "Útépítés előtted"], ["al_hazard", "Vigyázz, veszély az úton!"],
-      ["speeding", "Lassíts, túl gyors vagy!"], ["still", "Még ott van? Koppints!"],
+      ["speeding", "Lassíts, túl gyors vagy!"], ["al_toll", "Fizetős szakasz jön, nincs rá matricád!"], ["still", "Még ott van? Koppints!"],
     ]],
   ];
   const PHRASES = GROUPS.flatMap(([g, list]) => list.map(([id, text]) => ({ id, text, group: g })));

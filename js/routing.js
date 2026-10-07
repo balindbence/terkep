@@ -149,7 +149,8 @@ const Routing = (() => {
         st.key = keyOf(st); steps.push(st);
       });
     });
-    return { line, cum, steps, distance: trip.summary.length * 1000, duration: trip.summary.time, roads: [...new Set(roads)].slice(0, 2), engine: "valhalla" };
+    return { line, cum, steps, distance: trip.summary.length * 1000, duration: trip.summary.time, roads: [...new Set(roads)].slice(0, 2), engine: "valhalla",
+      hasToll: trip.legs.some(l => l.summary?.has_toll) };
   }
 
   // sok megálló: MAX_LOC-onként külön kérés, majd összefűzés
@@ -162,7 +163,7 @@ const Routing = (() => {
       p.steps.forEach((s, k) => { if (i > 0 && k === 0) return; if (i < parts.length - 1 && s.type === "arrive" && k === p.steps.length - 1) s = { ...s, text: "Megálló", say: "megérkezel a megállóhoz", key: "arrive_stop" }; steps.push({ ...s, along: s.along + base }); });
       distance += p.distance; duration += p.duration; roads.push(...p.roads);
     }
-    return { line, cum: Geo.cumulative(line), steps, distance, duration, roads: [...new Set(roads)].slice(0, 2), engine: parts[0].engine };
+    return { line, cum: Geo.cumulative(line), steps, distance, duration, roads: [...new Set(roads)].slice(0, 2), engine: parts[0].engine, hasToll: parts.some(p => p.hasToll) };
   }
 
   async function route(points, o = {}) {
@@ -225,7 +226,8 @@ const Routing = (() => {
       st.key = keyOf(st); steps.push(st);
     }));
     const roads = [...new Set(r.legs.flatMap(l => l.steps).filter(s => s.distance > 1500 && (s.ref || s.name)).map(s => s.ref || s.name))].slice(0, 2);
-    return { line, cum, steps, distance: r.distance, duration: r.duration, roads };
+    const hasToll = r.legs.some(l => l.steps.some(st => (st.intersections || []).some(x => (x.classes || []).includes("toll"))));
+    return { line, cum, steps, distance: r.distance, duration: r.duration, roads, hasToll };
   }
 
   function progress(rt, pos, hintIdx = 0) {
