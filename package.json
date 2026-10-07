@@ -1,0 +1,57 @@
+{
+  "name": "uthirnok",
+  "version": "1.0.0",
+  "description": "Navigacio kozossegi jelzesekkel: rendor, traffipax, baleset, dugo, veszely, benzinarak, parkolas.",
+  "main": "electron/main.js",
+  "scripts": {
+    "www": "node scripts/prepare-www.js",
+    "prestart": "node scripts/prepare-www.js",
+    "start": "electron .",
+    "pack": "node scripts/prepare-www.js && electron-builder --win dir",
+    "dist": "node scripts/prepare-www.js && electron-builder --win",
+    "android:prepare": "node scripts/prepare-www.js && node scripts/android-setup.js"
+  },
+  "author": "Bence",
+  "license": "MIT",
+  "dependencies": {
+    "leaflet": "1.9.4"
+  },
+  "devDependencies": {
+    "electron": "^32.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "hu.bence.uthirnok",
+    "productName": "Uthirnok",
+    "asar": true,
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**",
+      "www/**",
+      "package.json"
+    ],
+    "publish": null,
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "artifactName": "Uthirnok-${version}-telepito.${ext}",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Úthírnök"
+    },
+    "portable": {
+      "artifactName": "Uthirnok-${version}-hordozhato.${ext}"
+    }
+  }
+}

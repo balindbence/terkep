@@ -1,0 +1,101 @@
+# Úthírnök
+
+Navigációs app közösségi jelzésekkel. Androidon és gépen is fut (PWA: telepíthető, mint egy rendes app).
+
+## Mit tud
+
+- **Térkép + keresés** (OpenStreetMap, Nominatim), automatikus világos/sötét térkép napszak szerint
+- **Útvonaltervezés** több alternatívával (OSRM). A jelzések **beleszámítanak**: ha dugó, baleset vagy lezárás van az egyik úton, a másikat ajánlja előre („+12 perc a jelzések miatt”)
+- **Navigáció** magyar hangos utasításokkal, újratervezéssel, ha letérsz, ébren tartott kijelzővel
+- **Jelzések** (Waze-szerűen): rendőr, traffipax (mobil/fix/szakasz/piros lámpás), baleset, dugó, útlezárás/útépítés, veszély (kátyú, tárgy, álló jármű, állat, jég, köd, víz, hó), szabad parkoló
+  - mindegyik típusnak saját élettartama van (dugó 30 perc, kátyú 7 nap…)
+  - **„Még ott van?”** kérdés, miután elhaladtál mellette → megerősítés meghosszabbítja, 2 nemleges szavazattal több → eltűnik
+  - **hangos figyelmeztetés** előre („Figyelem! 500 méter múlva rendőr”)
+- **Fix traffipaxok** az OpenStreetMapből, rájuk is figyelmeztet
+- **Sebességmérő + sebességkorlát** (OSM), piros, ha túl gyorsan mész
+- **Benzinkutak árakkal**: bárki beírhatja a 95/100/dízel/LPG árat, a legolcsóbb 95-ös zölddel látszik
+- **Parkolók** (fizetős/ingyenes, férőhely, parkolóház)
+- **Szimuláció**: gépen GPS nélkül végig tudod „vezetni” az útvonalat, kipróbálni a figyelmeztetéseket
+- Hosszú nyomás / jobb klikk a térképen: „Navigálj ide” vagy „Jelzés ide”
+
+## Letöltés
+
+**Ha csak használni akarod:** a GitHub repó **Releases** oldaláról töltsd le a legfrissebbet:
+
+| Fájl | Hova |
+|---|---|
+| `Uthirnok-…-telepito.exe` | Windows — telepítő, asztali ikonnal és Start menüvel |
+| `Uthirnok-…-hordozhato.exe` | Windows — telepítés nélkül, pendrive-ról is fut |
+| `Uthirnok-…-android.apk` | Android telefon |
+
+**Windows:** a kék ablaknál (nincs aláírva) **További információ → Futtatás mindenképp.** Elég egyszer.
+
+**Android:** nyisd meg az APK-t a telefonon → ha kéri, engedélyezd a „Telepítés ismeretlen forrásból” lehetőséget a böngészőnek/Fájlkezelőnek → Telepítés. Első indításkor engedélyezd a helymeghatározást.
+
+Ha új verzió jön ki, az app magától szól („Új verzió: v1.0.3 · Letöltés”). Androidon az új APK simán felülírja a régit, a beállítások megmaradnak.
+
+> A frissítés-jelzéshez és ahhoz, hogy bárki letölthesse, a repó legyen **Public**.
+
+**Böngészőből is megy** (pl. GitHub Pages-ről), ott PWA-ként a kezdőképernyőre tehető.
+
+---
+
+## Fejlesztéshez
+
+| Fájl | Mit csinál |
+|---|---|
+| `Inditas.bat` | elindítja az appot fejlesztői módban (kell hozzá Node.js) |
+| `App-keszitese.bat` | saját exe a `dist` mappába + asztali ikon + zip a laptopra |
+| `Telepito-keszitese.bat` | telepítő exe helyben (ha symlink-hibát ír: `Telepito-keszitese-ADMIN.bat`) |
+| `GitHub-feltoltes.bat` | **egyszeri** beállítás: feltölti GitHubra, és elindítja az első kiadást |
+| `Frissites-feltoltese.bat` | utána bármikor: verziószám +1, feltöltés, és a GitHub megépíti az új exe-t és APK-t |
+
+Az androidos APK-t a GitHub Actions építi (Android Studio nem kell a gépedre). Nagyjából 10 perc egy kiadás; az **Actions** fülön látod, hol tart.
+
+Ha csak a webes részen dolgozol, böngészőben is tesztelhetsz:
+
+```
+python -m http.server 8080
+```
+
+→ http://localhost:8080 (a hely csak localhoston/HTTPS-en működik, ne dupla kattintással nyisd meg). Kipróbálás: keress rá egy helyre → Útvonal ide → **Szimuláció**. A Beállításokban a „Demo jelzések a közelbe” gomb tesztjelzéseket rak le.
+
+---
+
+## Közösségi mód (hogy mások jelzéseit is lásd)
+
+Alapból **helyi módban** fut: a jelzések csak a saját eszközödön vannak. A közösségi módhoz ingyenes Supabase kell:
+
+1. https://supabase.com → regisztráció → **New project** (régió: Frankfurt / Central EU).
+2. Bal oldalt **SQL Editor** → New query → másold be a `supabase.sql` teljes tartalmát → **Run**.
+3. **Project Settings → API**: másold ki a *Project URL*-t és az *anon public* kulcsot.
+4. Írd be őket a `config.js`-be (`SUPABASE_URL`, `SUPABASE_ANON_KEY`), mentsd, és futtasd a `Frissites-feltoltese.bat`-ot — az új exe és APK már közösségi módban fut.
+
+A jobb felső sarokban „● Közösségi mód” jelenik meg. Az anon kulcs nyilvános kulcs, nyugodtan lehet a kódban — a `supabase.sql` jogosultságai miatt mások csak olvasni, beküldeni és szavazni tudnak, törölni/átírni nem.
+
+## Fájlok
+
+| Fájl | Mit csinál |
+|---|---|
+| `index.html`, `style.css` | felület |
+| `config.js` | beállítások, Supabase adatok |
+| `js/app.js` | fő logika: térkép, keresés, navigáció, figyelmeztetések, rétegek |
+| `js/routing.js` | útvonal (OSRM) + magyar utasítások |
+| `js/reports.js` | jelzéstípusok, élettartamok, útvonal-büntetések |
+| `js/pois.js` | OSM: fix traffipax, benzinkút, parkoló, sebességkorlát |
+| `js/store.js` | adattárolás: Supabase vagy helyi |
+| `sw.js`, `manifest.webmanifest` | böngészős (PWA) telepíthetőség, offline térképrészek |
+| `supabase.sql` | adatbázis séma |
+| `electron/` | a Windows-os ablak |
+| `capacitor.config.json`, `scripts/android-setup.js`, `assets/` | az androidos app beállításai és ikonjai |
+| `android-key/` | az APK aláírókulcsa — ne töröld, különben a telefonon nem frissíthető az app |
+| `scripts/prepare-www.js` | összerakja a `www/` mappát, amiből az exe és az APK készül |
+| `.github/workflows/build.yml` | GitHubon építi az exe-t és az APK-t, és kiteszi a Releases oldalra |
+
+## Korlátok, amikről tudni kell
+
+- Az OSRM, Nominatim és Overpass ingyenes **nyilvános demószerverek** — tesztre és pár felhasználóra jók, de ha sokan használják, saját szerver (vagy fizetős szolgáltatás) kell. A `config.js`-ben átírhatók.
+- Élő forgalmi adat (mint a Google-nél) nincs: a forgalmat a felhasználók jelzései adják — ezért fontos, hogy minél többen használják.
+- A térkép északra néz (nem forog a menetiránnyal); a nyíl mutatja az irányt.
+- Háttérben (lezárt képernyővel) nem kap GPS-t — vezetés közben maradjon elöl az app (az androidos app ilyenkor nem engedi elaludni a kijelzőt).
+- Asztali gépen általában nincs GPS: ott a térkép a géped hozzávetőleges helyére áll, az indulási pontot kereséssel / jobb klikkel adhatod meg.

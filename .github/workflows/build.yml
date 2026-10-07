@@ -1,0 +1,104 @@
+name: Build
+
+# Fut, ha felteszel egy verziocimket (pl. v1.0.0), vagy kezzel inditod a GitHubon.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Fuggosegek
+        run: npm install --no-audit --no-fund
+
+      - name: Telepito epitese
+        run: npm run dist
+
+      - name: Feltoltes artifactkent
+        uses: actions/upload-artifact@v4
+        with:
+          name: uthirnok-windows
+          path: dist/*.exe
+          if-no-files-found: error
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Fuggosegek
+        run: |
+          npm install --no-audit --no-fund --ignore-scripts
+          npm install --no-save --no-audit --no-fund @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7 @capacitor/assets@3
+
+      - name: Androidos projekt
+        run: |
+          npm run www
+          npx cap add android
+          npx @capacitor/assets generate --android --assetPath assets
+          node scripts/android-setup.js
+          npx cap sync android
+
+      - name: APK epitese
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Alairas
+        run: |
+          VER=$(node -p "require('./package.json').version")
+          BT=$ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | sort -V | tail -1)
+          PASS=$(tr -d '\r\n' < android-key/jelszo.txt)
+          mkdir -p out
+          $BT/zipalign -p -f 4 android/app/build/outputs/apk/release/app-release-unsigned.apk out/aligned.apk
+          $BT/apksigner sign --ks android-key/uthirnok.jks --ks-key-alias uthirnok \
+            --ks-pass pass:$PASS --key-pass pass:$PASS \
+            --out out/Uthirnok-$VER-android.apk out/aligned.apk
+          rm out/aligned.apk
+          $BT/apksigner verify out/Uthirnok-$VER-android.apk
+
+      - name: Feltoltes artifactkent
+        uses: actions/upload-artifact@v4
+        with:
+          name: uthirnok-android
+          path: out/*.apk
+          if-no-files-found: error
+
+  # Cimkes inditasnal: mindket fajl felkerul a Releases oldalra
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [windows, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: kiadas
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          generate_release_notes: true
+          files: kiadas/*

@@ -1,0 +1,8 @@
+Ez az androidos app aláírókulcsa. NE töröld és ne cseréld le!
+
+Ha elveszik vagy lecseréled, a telefonokon már fent lévő Úthírnököt nem
+lehet frissíteni (előbb le kellene törölni, és vele a beállításokat is).
+
+A GitHub Actions ezzel írja alá az APK-t minden kiadásnál.
+Ha egyszer Google Play-re tennéd az appot, akkor ezt a kulcsot (és a
+jelszo.txt-t) vedd ki a repóból, és tedd GitHub Secrets-be.

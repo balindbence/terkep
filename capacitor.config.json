@@ -1,0 +1,7 @@
+{
+  "appId": "hu.bence.uthirnok",
+  "appName": "Úthírnök",
+  "webDir": "www",
+  "server": { "androidScheme": "https" },
+  "android": { "backgroundColor": "#0f1724" }
+}

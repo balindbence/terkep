@@ -1,0 +1,6 @@
+node_modules/
+dist/
+dist-regi-*/
+www/
+android/
+*.log
