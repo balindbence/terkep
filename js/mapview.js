@@ -52,8 +52,9 @@ const MapView = (() => {
     let [h, s, l] = rgb2hsl(c.r, c.g, c.b);
     if (kind === "text") l = 0.92 - l * 0.45;
     else if (kind === "halo") l = 0.08 + l * 0.04;
+    else if (kind === "line") l = 0.22 + (1 - l) * 0.3 + (s > 0.4 ? 0.08 : 0);
     else l = 0.09 + (1 - l) * 0.3;
-    s *= kind === "text" ? 0.3 : 0.35;
+    s *= kind === "text" ? 0.3 : kind === "line" ? 0.6 : 0.35;
     const [r, g, b] = hsl2rgb(h, s, Math.max(0, Math.min(1, l)));
     return `rgba(${r | 0},${g | 0},${b | 0},${c.a})`;
   }
@@ -69,7 +70,7 @@ const MapView = (() => {
       const p = layer.paint; if (!p) continue;
       for (const k of Object.keys(p)) {
         if (!k.endsWith("color")) continue;
-        const kind = k === "text-color" ? "text" : k === "text-halo-color" || k === "icon-halo-color" ? "halo" : "fill";
+        const kind = k === "text-color" ? "text" : k === "text-halo-color" || k === "icon-halo-color" ? "halo" : k === "line-color" ? "line" : "fill";
         p[k] = walk(p[k], kind);
       }
       if (layer.type === "symbol" && layer.layout?.["icon-image"] && /poi|amenity|shop/.test(layer.id)) p["icon-opacity"] = 0.75;
@@ -125,10 +126,63 @@ const MapView = (() => {
         paint: { "line-color": dark ? "#021a33" : "#0457b8", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 7, 16, 16, 19, 30] } }, before);
       map.addLayer({ id: "route-line", type: "line", source: "route-main", layout: { "line-cap": "round", "line-join": "round" },
         paint: { "line-color": ["get", "color"], "line-width": ["interpolate", ["linear"], ["zoom"], 10, 4.5, 16, 11, 19, 22] } }, before);
+      // széles, láthatatlan sáv a kijelölt útvonalon: ezt lehet megfogni/húzni vagy rákoppintani
+      map.addLayer({ id: "route-hit", type: "line", source: "route-main", layout: { "line-cap": "round", "line-join": "round" },
+        paint: { "line-color": "#000", "line-opacity": 0, "line-width": 26 } });
+      bindRouteEdit();
       map.on("click", "route-alt", e => { const i = e.features?.[0]?.properties?.i; if (i != null) emit("altclick", i); });
       map.on("mouseenter", "route-alt", () => map.getCanvas().style.cursor = "pointer");
       map.on("mouseleave", "route-alt", () => map.getCanvas().style.cursor = "");
     }
+  }
+
+  // ---------- útvonal húzása / koppintás az útvonalra ----------
+  let routeEditable = false, drag = null, ghost = null;
+  function setRouteEditable(v) { routeEditable = v; if (!v && drag) endDrag(null); }
+  function ghostAt(lngLat) {
+    if (!ghost) { const el = document.createElement("div"); el.className = "drag-ghost"; ghost = new maplibregl.Marker({ element: el, anchor: "center" }).setLngLat(lngLat).addTo(map); }
+    else ghost.setLngLat(lngLat);
+  }
+  function endDrag(e) {
+    if (!drag) return;
+    const d = drag; drag = null;
+    ghost?.remove(); ghost = null;
+    map.dragPan.enable();
+    if (!e) return;
+    const end = e.lngLat;
+    const moved = Math.hypot(e.point.x - d.point.x, e.point.y - d.point.y) > 8;
+    emit(moved ? "routedrag" : "routetap", { from: [d.lngLat.lat, d.lngLat.lng], to: [end.lat, end.lng] });
+  }
+  // képernyő-koordináta (egér / érintés) → térkép pont
+  function evPoint(ev) {
+    const t = ev.changedTouches?.[0] || ev.touches?.[0] || ev;
+    const r = map.getCanvasContainer().getBoundingClientRect();
+    const point = { x: t.clientX - r.left, y: t.clientY - r.top };
+    return { point, lngLat: map.unproject([point.x, point.y]) };
+  }
+  function bindRouteEdit() {
+    const onMove = ev => {
+      if (!drag) return;
+      const p = evPoint(ev);
+      if (Math.hypot(p.point.x - drag.point.x, p.point.y - drag.point.y) > 8) { ghostAt(p.lngLat); ev.cancelable && ev.preventDefault(); }
+    };
+    const onUp = ev => {
+      document.removeEventListener("mousemove", onMove); document.removeEventListener("touchmove", onMove);
+      document.removeEventListener("mouseup", onUp); document.removeEventListener("touchend", onUp);
+      endDrag(evPoint(ev));
+    };
+    const start = e => {
+      if (!routeEditable || drag || (e.originalEvent.touches && e.originalEvent.touches.length > 1)) return;
+      e.preventDefault();
+      map.dragPan.disable();
+      drag = { lngLat: e.lngLat, point: e.point };
+      document.addEventListener("mousemove", onMove); document.addEventListener("touchmove", onMove, { passive: false });
+      document.addEventListener("mouseup", onUp); document.addEventListener("touchend", onUp);
+    };
+    map.on("mousedown", "route-hit", start);
+    map.on("touchstart", "route-hit", start);
+    map.on("mouseenter", "route-hit", () => { if (routeEditable) map.getCanvas().style.cursor = "grab"; });
+    map.on("mouseleave", "route-hit", () => { if (!drag) map.getCanvas().style.cursor = ""; });
   }
 
   // ---------- események ----------
@@ -199,7 +253,7 @@ const MapView = (() => {
       .setLngLat(toLngLat(pos)).addTo(map);
   }
   function popup(pos, html, opts = {}) {
-    return new maplibregl.Popup({ closeButton: true, maxWidth: "300px", offset: opts.offset ?? 14, className: "pp" })
+    return new maplibregl.Popup({ closeButton: true, closeOnClick: opts.closeOnClick ?? true, maxWidth: "300px", offset: opts.offset ?? 14, className: "pp" })
       .setLngLat(toLngLat(pos)).setHTML(html).addTo(map);
   }
   function fit(points, pad) {
@@ -228,7 +282,7 @@ const MapView = (() => {
   function resetView() { map.easeTo({ pitch: 0, bearing: 0, padding: { top: 0, bottom: 0, left: 0, right: 0 }, duration: 600 }); }
 
   return {
-    init, setDark, setRoute, clearRoute, marker, popup, fit, bounds, center, follow, resetView, on,
+    init, setDark, setRoute, clearRoute, marker, popup, fit, bounds, center, follow, resetView, on, setRouteEditable,
     get map() { return map; }, get usingFallback() { return usingFallback; },
     onReady: f => styleReady ? f() : readyCbs.push(f),
   };

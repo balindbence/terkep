@@ -109,12 +109,14 @@ const Routing = (() => {
     return { text: TURN[arrow] || TURN.straight, arrow };
   }
 
-  async function valhalla(points, o, alternatives) {
+  // points[i] = [lat, lng]; o.through = Set az átmenő (nem megálló) pontok indexeivel; o.exclude = kerülendő pontok
+  async function valhalla(points, o, alternatives, variant = {}) {
+    const auto = { exclude_unpaved: !!o.avoidUnpaved, use_tolls: o.avoidTolls ? 0 : 0.5, use_highways: o.avoidMotorways ? 0 : 1, ...variant };
     const body = {
-      locations: points.map((p, i) => ({ lat: +p[0].toFixed(6), lon: +p[1].toFixed(6), type: i === 0 || i === points.length - 1 ? "break" : "break" })),
-      costing: "auto",
-      costing_options: { auto: { exclude_unpaved: !!o.avoidUnpaved, use_tolls: o.avoidTolls ? 0 : 0.5, use_highways: o.avoidMotorways ? 0 : 1 } },
+      locations: points.map((p, i) => ({ lat: +p[0].toFixed(6), lon: +p[1].toFixed(6), type: i > 0 && i < points.length - 1 && o.through?.has(i) ? "through" : "break" })),
+      costing: "auto", costing_options: { auto },
       units: "kilometers", directions_options: { language: "hu-HU" },
+      ...(o.exclude?.length ? { exclude_locations: o.exclude.slice(0, 50).map(p => ({ lat: p[0], lon: p[1] })) } : {}),
       ...(alternatives && points.length === 2 ? { alternates: 2 } : {}),
     };
     const res = await fetch(`${VH()}/route`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -124,6 +126,36 @@ const Routing = (() => {
       e.noRoute = /útvonalat/.test(e.message); throw e;
     }
     return [data.trip, ...(data.alternates || []).map(a => a.trip)].map(vPrepare);
+  }
+
+  // két útvonal nagyjából ugyanaz-e (a B pontjainak 90%-a 60 m-en belül van A-hoz)
+  function similar(A, B) {
+    const n = 24; let near = 0;
+    for (let k = 1; k < n; k++) {
+      const p = B.line[Math.floor(k * (B.line.length - 1) / n)];
+      if (Geo.nearestOnLine(p, A.line).d < 60) near++;
+    }
+    return near / (n - 1) > 0.9;
+  }
+
+  // több változat egyszerre: leggyorsabb, legrövidebb, autópálya nélkül (+ amit a szerver alternatívaként ad)
+  async function variants(points, o, alternatives) {
+    const jobs = [["base", valhalla(points, o, alternatives)]];
+    if (alternatives !== false) {
+      jobs.push(["short", valhalla(points, o, false, { shortest: true })]);
+      if (!o.avoidMotorways) jobs.push(["nohw", valhalla(points, o, false, { use_highways: 0 })]);
+    }
+    const res = await Promise.allSettled(jobs.map(j => j[1]));
+    if (res[0].status === "rejected") throw res[0].reason;
+    const out = [];
+    res.forEach((r, k) => {
+      if (r.status !== "fulfilled") return;
+      r.value.forEach((rt, m) => {
+        rt.variant = k === 0 && m > 0 ? "alt" : jobs[k][0];
+        if (!out.some(x => similar(x, rt))) out.push(rt);
+      });
+    });
+    return out;
   }
 
   function vPrepare(trip) {
@@ -171,9 +203,12 @@ const Routing = (() => {
     let lastErr;
     // 1) Valhalla
     try {
-      if (points.length <= MAX_LOC) return await valhalla(points, o, alternatives);
+      if (points.length <= MAX_LOC) return await variants(points, o, alternatives);
       const parts = [];
-      for (let i = 0; i < points.length - 1; i += MAX_LOC - 1) parts.push((await valhalla(points.slice(i, i + MAX_LOC), o, false))[0]);
+      for (let i = 0; i < points.length - 1; i += MAX_LOC - 1) {
+        const thr = new Set([...(o.through || [])].filter(k => k > i && k < i + MAX_LOC - 1).map(k => k - i));
+        parts.push((await valhalla(points.slice(i, i + MAX_LOC), { ...o, through: thr }, false))[0]);
+      }
       return [merge(parts)];
     } catch (e) { lastErr = e; if (e.noRoute && o.avoidUnpaved) throw new Error("Földutak nélkül nem találtam útvonalat. Kapcsold ki a „Földút nélkül” opciót."); }
     // 2) OSRM tartalék (nem tud földutat kizárni, de van sávinformáció)

@@ -287,3 +287,21 @@ body.dark .warn-row span, body.dark .warn-row b { color: #fbbf24; }
 
 .ios-steps { margin: 4px 0 12px; padding-left: 20px; line-height: 1.9; font-size: 15px; }
 .ios-ico { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; background: var(--soft); color: var(--acc); font-size: 13px; }
+
+/* Honnan / Hová szerkesztés, húzás */
+.stop .slot { flex: 1; text-align: left; font-size: 14px; padding: 4px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--tx); min-width: 0; }
+.stop.editing input { flex: 1; background: var(--soft); border: 0; border-radius: 10px; padding: 9px 10px; outline: 2px solid var(--acc); }
+.slot-results { list-style: none; margin: 2px 0 6px 20px; padding: 0; }
+.slot-results li { padding: 8px 10px; border-radius: 10px; cursor: pointer; }
+.slot-results li:hover { background: var(--soft); }
+.slot-results li b { display: block; font-size: 14px; font-weight: 600; } .slot-results li small { color: var(--mut); font-size: 12px; }
+.stop .dot.via { width: 8px; height: 8px; border-width: 2px; margin: 0 1px; }
+#swapBtn { font-size: 18px; color: var(--acc); }
+.drag-hint { margin: 2px 0 8px; }
+.via-pin { width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 4px solid var(--acc); box-shadow: 0 2px 5px rgba(0,0,0,.3); }
+.start-pin { width: 18px; height: 18px; border-radius: 50%; background: var(--acc); border: 4px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.35); }
+.avoid-pin { width: 26px; height: 26px; border-radius: 50%; background: var(--bad); color: #fff; font-weight: 900; display: grid; place-items: center; border: 3px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.35); font-size: 13px; }
+.drag-ghost { width: 22px; height: 22px; border-radius: 50%; background: #fff; border: 5px solid var(--acc); box-shadow: 0 4px 12px rgba(0,0,0,.35); pointer-events: none; }
+
+.stop button#clearAvoid, .stop button#swapBtn { width: auto; padding: 0 4px; }
+.stop .hint { flex: 1; }

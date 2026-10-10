@@ -7,6 +7,9 @@ Navigációs app közösségi jelzésekkel. Androidon és gépen is fut (PWA: te
 - **Vektoros térkép** (MapLibre + OpenFreeMap, kulcs nélkül), navigáció közben **menetirányba forgó, döntött 3D nézet**; éjjel magától sötét. Ha a térképszerver nem elérhető, OpenStreetMap tartalékra vált, és kiírja a hibát
 - **Keresés** (Nominatim), **mentett helyek** (Otthon, Munka, Suli) és legutóbbiak gyorsgombként
 - **Útvonaltervezés** (Valhalla, tartaléknak OSRM) **bármennyi megállóval** (20 fölött szakaszokra bontva), megállók átrendezése és **„Legjobb sorrend”** optimalizálás, **földutak (burkolatlan utak) kizárása**, fizetős utak / autópálya kerülése. A jelzések **beleszámítanak**: ha dugó, baleset vagy lezárás van az egyik úton, a másikat ajánlja előre, és az útvonal **forgalom szerint színezve** látszik
+- **Több útvonal egyszerre**: leggyorsabb, legrövidebb, autópálya nélkül — a hasonlókat összevonja
+- **Honnan / Hová mezők** mint a Google-ben: a kezdőpont is átírható, megállók közvetlenül beírhatók, ⇅ csere
+- **Útvonal elhúzása**: a kék vonalat megfogva és elhúzva átmenő pontot teszel be (nem áll meg ott); rákoppintva: „Ezt a szakaszt kerüld” vagy „Megálló ide”
 - **Indulás most / Később / Érkezés ekkorra**: megmondja, mikor indulj
 - **Útköltség + e-matrica figyelő**: útvonalanként benzinköltség (saját fogyasztással és árral), a fizetős szakaszok hossza és **vármegyéi**, és ha nincs rá érvényes matricád, a legolcsóbb megoldás (napi / 10 napos / havi / vármegyei / M1 regionális / éves) 2026-os árakkal, plusz hogy mennyivel tartana fizetős nélkül. Navigáció közben 2 km-rel a fizetős szakasz előtt szól. Beállítások → Autóm / Matricám. (Az árak a `js/costs.js` elején írhatók át.)
 - **Legolcsóbb benzinkút az útvonal mentén**, egy gombbal megállónak veszi
@@ -50,7 +53,12 @@ iPhone-ra webappként kerül fel (App Store nélkül):
 2. **Megosztás** gomb → **Főképernyőhöz adás** → **Hozzáadás**
 3. A kezdőképernyőről indítsd; teljes képernyős appként fut, és új kiadásnál magától frissül.
 
-Egyszeri beállítás ehhez: GitHubon a repó **Settings → Pages → Source: GitHub Actions**. Utána minden `Frissites-feltoltese.bat` futtatáskor a webapp is frissül.
+Egyszeri beállítás ehhez (a GitHub csak nyilvános repóból ad ingyen oldalt):
+1. Az androidos aláírókulcs a `titkos-kulcs` mappában van (nem kerül fel GitHubra) — tedd be a repó **Settings → Secrets and variables → Actions** alá `ANDROID_KEYSTORE_B64` és `ANDROID_KEY_PASSWORD` néven (lásd `titkos-kulcs/OLVASSEL.txt`).
+2. `Frissites-feltoltese.bat` — ez a régi kulcsot is kiveszi a repóból.
+3. **Settings → General → Danger Zone → Change visibility → Public**.
+4. **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+5. **Actions → Build → Run workflow** (vagy újra `Frissites-feltoltese.bat`). Utána minden `Frissites-feltoltese.bat` futtatáskor a webapp is frissül.
 
 Korlátok iPhone-on: csak úgy navigál, ha az app elöl van és a képernyő be van kapcsolva (az iOS a háttérben nem ad helyet a webappoknak). Igazi App Store-os iOS apphoz Apple fejlesztői fiók kell (évi 99 dollár) és Mac (vagy GitHub Actions macOS gép).
 
@@ -104,7 +112,7 @@ A jobb felső sarokban „● Közösségi mód” jelenik meg. Az anon kulcs ny
 | `supabase.sql` | adatbázis séma |
 | `electron/` | a Windows-os ablak |
 | `capacitor.config.json`, `scripts/android-setup.js`, `assets/` | az androidos app beállításai és ikonjai |
-| `android-key/` | az APK aláírókulcsa — ne töröld, különben a telefonon nem frissíthető az app |
+| `titkos-kulcs/` | az APK aláírókulcsa (csak a gépeden + GitHub Secrets-ben) — őrizd meg, különben a telefonon nem frissíthető az app |
 | `scripts/prepare-www.js` | összerakja a `www/` mappát, amiből az exe és az APK készül |
 | `.github/workflows/build.yml` | GitHubon építi az exe-t és az APK-t, és kiteszi a Releases oldalra |
 

@@ -1,6 +1,6 @@
 {
   "name": "uthirnok",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "description": "Navigacio kozossegi jelzesekkel: rendor, traffipax, baleset, dugo, veszely, benzinarak, parkolas.",
   "main": "electron/main.js",
   "scripts": {

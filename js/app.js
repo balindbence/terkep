@@ -15,6 +15,9 @@
     recent: ls.get("uthirnok.recent", []),          // [{name, sub, pos}]
     stats: ls.get("uthirnok.stats", { reports: 0, votes: 0 }),
     dest: null, destName: "", destSub: "", stops: [], addingStop: false,
+    start: null,            // {pos, name} — ha null, a saját helyről
+    avoid: [],              // kerülendő pontok [lat, lng]
+    editing: null,          // melyik mezőt írja épp: {slot:"start"|"dest"|"stop", i}
     depart: { mode: "now", time: null },
     routes: [], sel: 0, nav: null,
     reports: new Map(), markers: new Map(), poiMarkers: [],
@@ -247,11 +250,13 @@
     destMarker?.remove(); destMarker = null;
     stopMarkers.forEach(m => m.remove()); stopMarkers = [];
     if (S.dest) { const el = document.createElement("div"); el.className = "dest-pin"; destMarker = MapView.marker(S.dest, el, { anchor: "center" }); }
-    S.stops.forEach(s => { const el = document.createElement("div"); el.className = "stop-pin"; stopMarkers.push(MapView.marker(s.pos, el, { anchor: "center" })); });
+    S.stops.forEach(s => { const el = document.createElement("div"); el.className = s.through ? "via-pin" : "stop-pin"; stopMarkers.push(MapView.marker(s.pos, el, { anchor: "center" })); });
+    if (S.start) { const el = document.createElement("div"); el.className = "start-pin"; stopMarkers.push(MapView.marker(S.start.pos, el, { anchor: "center" })); }
+    S.avoid.forEach(p => { const el = document.createElement("div"); el.className = "avoid-pin"; el.textContent = "✕"; stopMarkers.push(MapView.marker(p, el, { anchor: "center" })); });
   }
 
   function showPlace(pos, name, sub = "") {
-    S.dest = pos; S.destName = name; S.destSub = sub; S.stops = [];
+    S.dest = pos; S.destName = name; S.destSub = sub; S.stops = []; S.avoid = []; S.start = null; S.editing = null;
     drawDestMarkers();
     S.follow = false; $("#btnLocate").classList.remove("on");
     MapView.map.easeTo({ center: [pos[1], pos[0]], zoom: 16, pitch: 0, bearing: 0, duration: 700,
@@ -293,7 +298,7 @@
 
   function clearAll() {
     stopNav(false); stopSim();
-    MapView.clearRoute(); S.routes = []; S.dest = null; S.stops = []; S.fuelOnRoute = null;
+    MapView.clearRoute(); MapView.setRouteEditable(false); S.routes = []; S.dest = null; S.stops = []; S.start = null; S.avoid = []; S.editing = null; S.fuelOnRoute = null;
     drawDestMarkers(); closeSheet(); q.value = "";
     MapView.resetView();
   }
@@ -305,22 +310,37 @@
     try { (await Store.listReports({ s: s - .01, w: w - .01, n: n + .01, e: e + .01 })).forEach(r => S.reports.set(r.id, r)); renderReports(); } catch {}
   }
 
-  const routeOpts = () => ({ avoidTolls: S.settings.avoidTolls, avoidMotorways: S.settings.avoidMotorways, avoidUnpaved: S.settings.avoidUnpaved });
+  const routeOpts = () => ({ avoidTolls: S.settings.avoidTolls, avoidMotorways: S.settings.avoidMotorways, avoidUnpaved: S.settings.avoidUnpaved, exclude: S.avoid });
+  // pontok listája a tervezéshez + melyik átmenő pont (nem megálló)
+  function buildPoints(from, stops = S.stops) {
+    const pts = [from, ...stops.map(x => x.pos), S.dest];
+    const through = new Set(stops.map((x, i) => x.through ? i + 1 : -1).filter(i => i > 0));
+    return { pts, through };
+  }
 
   async function planRoute() {
     if (!S.dest) return;
-    let from = S.me;
+    let from = S.start?.pos || S.me;
     if (!from) { from = MapView.center(); toast("Nincs GPS — a térkép közepéről tervezek."); }
     S.planFrom = from;
     drawDestMarkers();
     openSheet(`<p class="s-title">Útvonalak keresése…</p><p class="s-sub">A közösségi jelzéseket is figyelembe veszem.</p>`);
     try {
-      const pts = [from, ...S.stops.map(s => s.pos), S.dest];
-      const routes = await Routing.route(pts, routeOpts());
+      const { pts, through } = buildPoints(from);
+      const routes = await Routing.route(pts, { ...routeOpts(), through });
       await ensureReportsAround(routes[0].line);
       const active = [...S.reports.values()];
       routes.forEach(rt => { const x = Reports.onRoute(active, rt); rt.hits = x.hits; rt.penalty = x.penalty; rt.score = rt.duration + x.penalty; });
       routes.sort((a, b) => a.score - b.score);
+      // címkék: leggyorsabb, legrövidebb, autópálya nélkül
+      const minD = Math.min(...routes.map(r => r.distance));
+      routes.forEach((r, i) => {
+        r.labels = [];
+        if (i === 0 && routes.length > 1) r.labels.push(["ok", "Leggyorsabb"]);
+        if (routes.length > 1 && r.distance === minD && r.distance < routes[0].distance * 0.97) r.labels.push(["blue", "Legrövidebb"]);
+        if (r.variant === "nohw" && i > 0) r.labels.push(["", "Autópálya nélkül"]);
+        if (r.variant === "alt" && i > 0) r.labels.push(["", "Alternatív"]);
+      });
       S.routes = routes; S.sel = 0; S.fuelOnRoute = null;
       drawRoutes(true); showRouteSheet();
       findFuelOnRoute(routes[0]);
@@ -377,24 +397,35 @@
     const nowPlus = new Date(Date.now() + 30 * 60000);
     const defTime = `${String(nowPlus.getHours()).padStart(2, "0")}:${String(nowPlus.getMinutes()).padStart(2, "0")}`;
     const tval = S.depart.time ? Geo.fmtClock(new Date(S.depart.time)) : defTime;
-    const stops = [`<div class="stop"><i class="dot"></i><span>${S.me ? "Saját hely" : "Térkép közepe"}</span></div>`,
-      ...S.stops.map((s, i) => `<div class="stop"><i class="dot"></i><span>${i + 1}. ${escapeHtml(s.name)}</span>
+    const ed = S.editing;
+    const editRow = (ph) => `<div class="stop editing"><input id="slotInput" placeholder="${ph}" autocomplete="off"><button id="slotCancel" aria-label="Mégse">×</button></div><ul class="slot-results" id="slotResults"></ul>`;
+    let stopNo = 0;
+    const stops = [
+      ed?.slot === "start" ? editRow("Honnan indulsz?") :
+        `<div class="stop"><i class="dot"></i><button class="slot" data-slot="start">${S.start ? escapeHtml(S.start.name) : S.me ? "📍 Saját hely" : "Térkép közepe"}</button>
+         <button id="swapBtn" title="Csere" aria-label="Honnan és hová csere">⇅</button></div>`,
+      ...S.stops.map((s, i) => (ed?.slot === "stop" && ed.i === i) ? editRow("Megálló") :
+        `<div class="stop"><i class="dot ${s.through ? "via" : ""}"></i><button class="slot" data-slot="stop" data-i="${i}">${s.through ? "↝ " + escapeHtml(s.name) : `${++stopNo}. ${escapeHtml(s.name)}`}</button>
         ${i > 0 ? `<button data-upstop="${i}" aria-label="Feljebb">↑</button>` : ""}<button data-rmstop="${i}" aria-label="Törlés">×</button></div>`),
-      `<div class="stop"><i class="dot end"></i><span><b>${escapeHtml(S.destName || "Úti cél")}</b></span></div>`].join("");
+      ...(ed?.slot === "stop" && ed.i === S.stops.length ? [editRow("Új megálló…")] : []),
+      ed?.slot === "dest" ? editRow("Hová mész?") :
+        `<div class="stop"><i class="dot end"></i><button class="slot" data-slot="dest"><b>${escapeHtml(S.destName || "Úti cél")}</b></button></div>`].join("");
+    const avoidRow = S.avoid.length ? `<div class="stop"><span class="hint">🚫 ${S.avoid.length} kerülendő szakasz</span><button class="addstop" id="clearAvoid" style="flex:none">Törlés</button></div>` : "";
     const rows = S.routes.map((rt, i) => {
       const ti = timeInfo(rt);
       return `<button class="rt ${i === S.sel ? "sel" : ""}" data-r="${i}">
         <div class="tt">${Geo.fmtDur(rt.score).replace(" perc", " p")}</div>
-        <div class="meta"><b>${rt.roads.length ? escapeHtml(rt.roads.join(", ")) : Geo.fmtDist(rt.distance)}</b>
+        <div class="meta"><b>${rt.roads.length ? escapeHtml(rt.roads.map(r => /^\d+$/.test(r) ? `${r}. sz. út` : r).join(", ")) : Geo.fmtDist(rt.distance)}</b>
           <small>${Geo.fmtDist(rt.distance)} · ${ti.line}</small>
           ${trafficBar(rt)}
-          <div>${i === 0 && S.routes.length > 1 ? '<span class="tag ok">Leggyorsabb</span>' : ""}${rt.penalty >= 60 ? `<span class="tag warn">+${Math.round(rt.penalty / 60)} p jelzések miatt</span>` : ""}${hitTags(rt.hits)}${!rt.hits.length ? '<span class="tag">nincs jelzés</span>' : ""}${rt.hasToll ? '<span class="tag warn">🛣️ fizetős</span>' : ""}<span class="tag">⛽ ~${Costs.fmtFt(Costs.fuelCost(rt.distance, S.settings.car).ft)}</span>${rt.engine === "osrm" && S.settings.avoidUnpaved ? '<span class="tag warn">földutak most nincsenek kizárva</span>' : ""}</div>
+          <div>${(rt.labels || []).map(([c, l]) => `<span class="tag ${c}">${l}</span>`).join("")}${rt.distance > S.routes[0].distance * 1.02 && i > 0 ? `<span class="tag">+${Geo.fmtDist(rt.distance - S.routes[0].distance)}</span>` : ""}${rt.penalty >= 60 ? `<span class="tag warn">+${Math.round(rt.penalty / 60)} p jelzések miatt</span>` : ""}${hitTags(rt.hits)}${!rt.hits.length ? '<span class="tag">nincs jelzés</span>' : ""}${rt.hasToll ? '<span class="tag warn">🛣️ fizetős</span>' : ""}<span class="tag">⛽ ~${Costs.fmtFt(Costs.fuelCost(rt.distance, S.settings.car).ft)}</span>${rt.engine === "osrm" && S.settings.avoidUnpaved ? '<span class="tag warn">földutak most nincsenek kizárva</span>' : ""}${rt.engine === "osrm" && S.avoid.length ? '<span class="tag warn">a kerülés most nem működik</span>' : ""}</div>
         </div><div class="radio"></div></button>`;
     }).join("");
     const f = S.fuelOnRoute;
     const fuelHtml = f ? `<div class="extra">⛽ <span>Legolcsóbb az úton: <b>${escapeHtml(f.brand)}</b> ${f.price} Ft${f.detour > 30 ? ` · +${Math.round(f.detour / 60)} p` : ""}</span><button class="go" id="addFuel">Megálló</button></div>` : "";
     openSheet(`
-      <div class="stops">${stops}</div>
+      <div class="stops">${stops}${avoidRow}</div>
+      <p class="hint drag-hint">Tipp: húzd el a kék útvonalat a térképen, vagy koppints rá, ha egy szakaszt kerülnél.</p>
       <div class="row" style="gap:14px;flex:none"><button class="addstop" id="addStop" style="flex:none">＋ Megálló hozzáadása</button>
         ${S.stops.length >= 2 ? '<button class="addstop" id="optStops" style="flex:none">⇅ Legjobb sorrend</button>' : ""}</div>
       <div class="seg" id="departSeg">
@@ -421,14 +452,16 @@
     if (os) os.onclick = async () => {
       os.disabled = true; os.textContent = "Számolom…";
       try {
-        const pts = [S.planFrom || myPos(), ...S.stops.map(x => x.pos), S.dest];
+        const { pts } = buildPoints(S.planFrom || myPos());
         const order = await Routing.optimize(pts);
         const inner = order.filter(i => i > 0 && i < pts.length - 1).map(i => S.stops[i - 1]);
         if (inner.length === S.stops.length) S.stops = inner;
         toast("Megállók sorrendje optimalizálva"); planRoute();
       } catch (e) { toast(e.message || "Most nem sikerült optimalizálni."); os.disabled = false; os.textContent = "⇅ Legjobb sorrend"; }
     };
-    $("#addStop").onclick = () => { S.addingStop = true; q.value = ""; $("#sheet").classList.add("mini"); setSheetH(); q.focus(); toast("Keresd meg a megállót", 2500); };
+    $("#addStop").onclick = () => { S.editing = { slot: "stop", i: S.stops.length }; showRouteSheet(); };
+    bindSlotEditor();
+    MapView.setRouteEditable(true);
     $$("#departSeg button").forEach(b => b.onclick = () => {
       S.depart.mode = b.dataset.m;
       if (b.dataset.m !== "now" && !S.depart.time) S.depart.time = +nowPlus;
@@ -457,6 +490,84 @@
       planRoute();
     };
   }
+
+  // ================= Honnan / megállók / Hová szerkesztése =================
+  async function geocode(v) {
+    const c = myPos();
+    const vb = `${c[1] - 1.5},${c[0] + 1},${c[1] + 1.5},${c[0] - 1}`;
+    const res = await fetch(`${C.NOMINATIM_URL}/search?format=jsonv2&limit=6&accept-language=hu&viewbox=${vb}&q=${encodeURIComponent(v)}`);
+    if (!res.ok) throw new Error(res.status);
+    return (await res.json()).map(r => { const parts = r.display_name.split(", "); return { pos: [+r.lat, +r.lon], name: r.name || parts[0], sub: parts.slice(1, 3).join(", ") }; });
+  }
+  function bindSlotEditor() {
+    $$(".slot").forEach(b => b.onclick = () => { S.editing = { slot: b.dataset.slot, i: +b.dataset.i || 0 }; showRouteSheet(); });
+    const sw = $("#swapBtn");
+    if (sw) sw.onclick = () => {
+      const oldStart = S.start || { pos: S.planFrom || myPos(), name: "Saját hely" };
+      S.start = { pos: S.dest, name: S.destName };
+      S.dest = oldStart.pos; S.destName = oldStart.name;
+      S.stops.reverse(); planRoute();
+    };
+    const ca = $("#clearAvoid"); if (ca) ca.onclick = () => { S.avoid = []; planRoute(); };
+    const inp = $("#slotInput"); if (!inp) return;
+    inp.focus();
+    const ed = S.editing;
+    let timer, list = [];
+    const render = () => {
+      const opts = (ed.slot === "start" ? [{ pos: null, name: "📍 Saját hely", sub: "GPS" }] : [])
+        .concat(list.length ? list : S.recent.slice(0, 4).map(r => ({ ...r, sub: "legutóbbi" })));
+      $("#slotResults").innerHTML = opts.map((r, k) => `<li data-k="${k}"><b>${escapeHtml(r.name)}</b><small>${escapeHtml(r.sub || "")}</small></li>`).join("");
+      $$("#slotResults li").forEach(li => li.onclick = () => pick(opts[+li.dataset.k]));
+    };
+    const pick = r => {
+      S.editing = null;
+      if (ed.slot === "start") S.start = r.pos ? { pos: r.pos, name: r.name } : null;
+      else if (ed.slot === "dest") { S.dest = r.pos; S.destName = r.name; }
+      else if (ed.i >= S.stops.length) S.stops.push({ pos: r.pos, name: r.name });
+      else S.stops[ed.i] = { pos: r.pos, name: r.name };
+      if (r.pos) addRecent(r.name, r.sub || "", r.pos);
+      planRoute();
+    };
+    inp.oninput = () => {
+      clearTimeout(timer);
+      const v = inp.value.trim();
+      if (v.length < 3) { list = []; render(); return; }
+      timer = setTimeout(async () => { try { list = await geocode(v); render(); } catch { toast("A kereső most nem elérhető."); } }, 400);
+    };
+    inp.onkeydown = e => { if (e.key === "Enter" && list[0]) pick(list[0]); if (e.key === "Escape") { S.editing = null; showRouteSheet(); } };
+    $("#slotCancel").onclick = () => { S.editing = null; showRouteSheet(); };
+    render();
+  }
+
+  // ================= útvonal húzása / koppintás az útvonalra =================
+  function stopIndexForAlong(along) {
+    const rt = S.routes[S.sel];
+    const al = S.stops.map(x => { const n = Geo.nearestOnLine(x.pos, rt.line); return rt.cum[n.i]; });
+    let i = 0; while (i < al.length && al[i] < along) i++;
+    return i;
+  }
+  MapView.on("routedrag", ({ from, to }) => {
+    const rt = S.routes[S.sel]; if (!rt || S.nav) return;
+    const n = Geo.nearestOnLine(from, rt.line);
+    S.stops.splice(stopIndexForAlong(rt.cum[n.i]), 0, { pos: to, name: "Átmenő pont", through: true });
+    planRoute();
+  });
+  let routePopup = null;
+  MapView.on("routetap", ({ from }) => {
+    const rt = S.routes[S.sel]; if (!rt || S.nav) return;
+    routePopup?.remove();
+    routePopup = MapView.popup(from, `<div class="ctx">
+      <button class="btn" data-rt="avoid">🚫 Ezt a szakaszt kerüld</button>
+      <button class="btn" data-rt="stop">📍 Megálló ide</button></div>`, { offset: 8, closeOnClick: false });
+    MapView.map.once("movestart", () => routePopup?.remove());
+    routePopup.getElement().addEventListener("click", e => {
+      const b = e.target.closest("[data-rt]"); if (!b) return;
+      routePopup.remove();
+      if (b.dataset.rt === "avoid") { S.avoid.push(from); toast("Kerülő utat keresek…"); }
+      else { const n = Geo.nearestOnLine(from, rt.line); S.stops.splice(stopIndexForAlong(rt.cum[n.i]), 0, { pos: from, name: "Megálló" }); }
+      planRoute();
+    });
+  });
 
   // ================= költség + matrica =================
   function costCardHtml(rt) {
@@ -498,9 +609,11 @@
     rt.tollLoading = false;
     refreshCostCard(rt);
     // mennyivel tartana tovább fizetős nélkül (csak ha kellene matrica)
-    if (rt.toll && !Costs.myCoverage(S.settings.vignette, rt.toll.counties) && !S.settings.avoidTolls && !rt.noToll) {
+    if (rt.toll && !Costs.myCoverage(S.settings.vignette, rt.toll.counties) && !S.settings.avoidTolls && !rt.noToll && !rt.noTollAsked) {
+      rt.noTollAsked = true;
       try {
-        const [alt] = await Routing.route([S.planFrom || myPos(), ...S.stops.map(x => x.pos), S.dest], { ...routeOpts(), avoidTolls: true, alternatives: false });
+        const bp = buildPoints(S.planFrom || myPos());
+        const [alt] = await Routing.route(bp.pts, { ...routeOpts(), through: bp.through, avoidTolls: true, alternatives: false });
         if (!alt.hasToll) { rt.noToll = { d: alt.duration - rt.duration }; refreshCostCard(rt); }
       } catch {}
     }
@@ -556,6 +669,7 @@
   async function startNav() {
     const rt = S.routes[S.sel]; if (!rt) return;
     S.routes = [rt]; S.sel = 0;
+    MapView.setRouteEditable(false);
     S.nav = { rt, idx: 0, offCount: 0, spoken: new Set(), lastReroute: 0, routeAlong: new Map(), along: 0, tick: 0, parkOffered: false };
     S.alerted.clear();
     drawRoutes();
@@ -705,7 +819,8 @@
       // a már elhagyott megállókat kihagyjuk
       const rest = S.stops.filter(s => Geo.nearestOnLine(s.pos, nav.rt.line).i > nav.idx);
       S.stops = rest;
-      const [rt] = await Routing.route([S.me || MapView.center(), ...rest.map(s => s.pos), S.dest], { ...routeOpts(), alternatives: false });
+      const bp = buildPoints(S.me || MapView.center(), rest);
+      const [rt] = await Routing.route(bp.pts, { ...routeOpts(), through: bp.through, alternatives: false });
       if (!S.nav) return;
       const x = Reports.onRoute([...S.reports.values()], rt); rt.hits = x.hits; rt.penalty = x.penalty; rt.score = rt.duration + x.penalty;
       Object.assign(nav, { rt, idx: 0, spoken: new Set(), routeAlong: new Map() });

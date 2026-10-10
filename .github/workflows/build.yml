@@ -69,15 +69,22 @@ jobs:
           ./gradlew assembleRelease --no-daemon
 
       - name: Alairas
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           VER=$(node -p "require('./package.json').version")
           BT=$ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | sort -V | tail -1)
-          PASS=$(tr -d '\r\n' < android-key/jelszo.txt)
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > /tmp/uthirnok.jks; KS=/tmp/uthirnok.jks; PASS="$KS_PASS"
+          elif [ -f android-key/uthirnok.jks ]; then
+            echo "::warning::Nincs ANDROID_KEYSTORE_B64 secret, a regi kulccsal irom ala"; KS=android-key/uthirnok.jks; PASS=$(tr -d '\r\n' < android-key/jelszo.txt)
+          else
+            echo "::error::Hianyzik az alairo kulcs: add hozza az ANDROID_KEYSTORE_B64 es ANDROID_KEY_PASSWORD secretet (README)"; exit 1
+          fi
           mkdir -p out
           $BT/zipalign -p -f 4 android/app/build/outputs/apk/release/app-release-unsigned.apk out/aligned.apk
-          $BT/apksigner sign --ks android-key/uthirnok.jks --ks-key-alias uthirnok \
-            --ks-pass pass:$PASS --key-pass pass:$PASS \
-            --out out/Uthirnok-$VER-android.apk out/aligned.apk
+          $BT/apksigner sign --ks "$KS" --ks-key-alias uthirnok --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --out out/Uthirnok-$VER-android.apk out/aligned.apk
           rm out/aligned.apk
           $BT/apksigner verify out/Uthirnok-$VER-android.apk
 
@@ -93,6 +100,7 @@ jobs:
   # Egyszer be kell kapcsolni: repo Settings -> Pages -> Source: GitHub Actions
   pages:
     runs-on: ubuntu-latest
+    continue-on-error: true
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}

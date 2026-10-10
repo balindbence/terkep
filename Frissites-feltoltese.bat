@@ -47,6 +47,9 @@ if "!VER!"=="" (
 echo Uj verzio: !VER!
 echo.
 
+rem az alairo kulcs nem kerulhet a nyilvanos repoba
+git rm -r -q --cached android-key >nul 2>nul
+git rm -r -q --cached titkos-kulcs >nul 2>nul
 git add -A
 git commit -m "v!VER!" >nul 2>nul
 git push origin main
