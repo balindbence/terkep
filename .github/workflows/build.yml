@@ -5,6 +5,8 @@ on:
   push:
     tags:
       - 'v*'
+    branches:
+      - main       # a webapp (Pages) a main agrol megy ki: a github-pages kornyezet csak innen enged telepiteni
   workflow_dispatch:
 
 permissions:
@@ -14,6 +16,7 @@ permissions:
 
 jobs:
   windows:
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +39,7 @@ jobs:
           if-no-files-found: error
 
   android:
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -108,6 +112,7 @@ jobs:
   # -> https://balindbence.github.io/uthirnok/  (Safari: Megosztas -> Fokepernyohoz adas)
   # Egyszer be kell kapcsolni: repo Settings -> Pages -> Source: GitHub Actions
   pages:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
