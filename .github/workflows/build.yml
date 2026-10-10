@@ -44,6 +44,15 @@ jobs:
         with:
           node-version: 20
 
+      - name: Alairo kulcs megvan?
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KS_B64" ] && [ ! -f android-key/uthirnok.jks ]; then
+            echo "::error title=Hianyzik az androidos alairo kulcs::GitHubon: Settings -> Secrets and variables -> Actions -> New repository secret: ANDROID_KEYSTORE_B64 es ANDROID_KEY_PASSWORD (a titkos-kulcs mappaban levo fajlok tartalma)."
+            exit 1
+          fi
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -100,7 +109,6 @@ jobs:
   # Egyszer be kell kapcsolni: repo Settings -> Pages -> Source: GitHub Actions
   pages:
     runs-on: ubuntu-latest
-    continue-on-error: true
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
@@ -116,18 +124,35 @@ jobs:
           npm install --no-audit --no-fund --ignore-scripts
           npm run www
 
+      # ha a Pages nincs bekapcsolva (vagy privat a repo), csak kihagyjuk, nem lesz piros
+      - name: Pages bekapcsolva?
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api "repos/${{ github.repository }}/pages" >/dev/null 2>&1; then
+            echo "on=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "on=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::A GitHub Pages nincs bekapcsolva: Settings -> Pages -> Source: GitHub Actions (es a repo legyen Public). Most kihagyom."
+          fi
+
       - uses: actions/configure-pages@v5
+        if: steps.check.outputs.on == 'true'
 
       - uses: actions/upload-pages-artifact@v3
+        if: steps.check.outputs.on == 'true'
         with:
           path: www
 
       - id: deploy
+        if: steps.check.outputs.on == 'true'
         uses: actions/deploy-pages@v4
 
   # Cimkes inditasnal: mindket fajl felkerul a Releases oldalra
   release:
-    if: startsWith(github.ref, 'refs/tags/')
+    # az exe akkor is kikerul, ha az android build elhasalt
+    if: always() && startsWith(github.ref, 'refs/tags/') && needs.windows.result == 'success'
     needs: [windows, android]
     runs-on: ubuntu-latest
     steps:
